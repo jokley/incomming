@@ -1,4 +1,4 @@
-# Freestyle WM 2026 - Event Management System
+# Freestyle WM 2027 - Event Management System
 
 Event-Management-Software für die Organisation der Freestyle-Weltmeisterschaft mit Athletenverwaltung, Hotelzuweisungen und Dashboard-Auswertungen.
 
