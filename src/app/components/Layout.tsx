@@ -9,7 +9,7 @@ export function Layout() {
           <div className="flex justify-between h-16">
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-blue-600">Freestyle WM 2026</h1>
+                <h1 className="text-xl font-bold text-blue-600">Freestyle WM 2027</h1>
               </div>
               <div className="ml-10 flex space-x-8">
                 <NavLink
