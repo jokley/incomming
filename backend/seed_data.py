@@ -177,7 +177,7 @@ def seed_database():
             athlete = Athlete(
                 lastname=lastname,
                 firstname=firstname,
-                nationcode=nation,
+                nation_code=nation,
                 function=function,
                 gender=gender,
                 discipline=discipline,
