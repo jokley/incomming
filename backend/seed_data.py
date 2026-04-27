@@ -168,7 +168,7 @@ def seed_database():
         
             ('Tiroler Hof', 'Partenen', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 4, False, False),
             ('Tiroler Hof', 'Partenen', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 3, False, False),
-        ]
+            ]
         
         hotels_map = {}
         for hotel_name, location, region, room_type_name, date_from, date_to, room_count, has_hp, has_sr in hotels_inventory_data:
