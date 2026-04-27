@@ -1,27 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Loader2, Calendar, X, TrendingUp } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-interface RoomType {
-  id: string;
-  name: string;
-  maxPersons: number;
-}
-
-interface EventRoomDemand {
-  id: string;
-  roomType: RoomType;
-  roomCount: number;
-}
-
-interface Event {
-  id: string;
-  discipline: string;
-  startDate: string;
-  endDate: string;
-  roomDemands: EventRoomDemand[];
-}
+import { api } from '../services/api';
+import { Event, EventRoomDemand, RoomType } from '../types';
 
 export function EventsManagement() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -47,15 +27,10 @@ export function EventsManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [eventsRes, roomTypesRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/events`),
-        fetch(`${API_BASE_URL}/room-types`)
+      const [eventsData, roomTypesData] = await Promise.all([
+        api.getEvents(),
+        api.getRoomTypes()
       ]);
-
-      if (!eventsRes.ok || !roomTypesRes.ok) throw new Error('Failed to load');
-
-      const eventsData = await eventsRes.json();
-      const roomTypesData = await roomTypesRes.json();
 
       setEvents(eventsData);
       setRoomTypes(roomTypesData);
@@ -71,17 +46,11 @@ export function EventsManagement() {
     e.preventDefault();
 
     try {
-      const url = editingId
-        ? `${API_BASE_URL}/events/${editingId}`
-        : `${API_BASE_URL}/events`;
-
-      const response = await fetch(url, {
-        method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) throw new Error('Failed to save');
+      if (editingId) {
+        await api.updateEvent(editingId, formData);
+      } else {
+        await api.createEvent(formData);
+      }
 
       await loadData();
       setFormData({ discipline: '', startDate: '', endDate: '' });
@@ -106,11 +75,7 @@ export function EventsManagement() {
     if (!confirm('Event wirklich löschen? Alle Room Demands werden ebenfalls gelöscht.')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/events/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete');
+      await api.deleteEvent(id);
       await loadData();
       if (selectedEvent?.id === id) {
         setSelectedEvent(null);
@@ -125,13 +90,7 @@ export function EventsManagement() {
     if (!selectedEvent) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/events/${selectedEvent.id}/demand`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(demandForm),
-      });
-
-      if (!response.ok) throw new Error('Failed to add demand');
+      await api.addEventDemand(selectedEvent.id, demandForm);
 
       await loadData();
       setShowDemandForm(false);
@@ -152,11 +111,7 @@ export function EventsManagement() {
     if (!confirm('Bedarf wirklich löschen?')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/events/${eventId}/demand/${demandId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete');
+      await api.deleteEventDemand(eventId, demandId);
       await loadData();
 
       // Update selected event
@@ -450,6 +405,80 @@ export function EventsManagement() {
           )}
         </div>
       </div>
+
+      {/* Gantt Chart */}
+      {events.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Events Timeline</h3>
+          <div className="overflow-x-auto">
+            {(() => {
+              // Calculate date range
+              const allDates = events.flatMap(e => [new Date(e.startDate), new Date(e.endDate)]);
+              const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+              const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+              const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+              // Generate date labels
+              const dateLabels: string[] = [];
+              for (let i = 0; i < totalDays; i++) {
+                const date = new Date(minDate);
+                date.setDate(date.getDate() + i);
+                dateLabels.push(date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }));
+              }
+
+              return (
+                <div className="min-w-full">
+                  {/* Timeline header */}
+                  <div className="flex mb-2">
+                    <div className="w-48 flex-shrink-0"></div>
+                    <div className="flex-1 flex">
+                      {dateLabels.map((label, idx) => (
+                        <div
+                          key={idx}
+                          className="flex-1 text-center text-xs text-gray-600 border-l border-gray-200 px-1"
+                          style={{ minWidth: '40px' }}
+                        >
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Events */}
+                  {events.map((event) => {
+                    const start = new Date(event.startDate);
+                    const end = new Date(event.endDate);
+                    const startOffset = Math.floor((start.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                    const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                    const totalBeds = calculateTotalBeds(event.roomDemands);
+
+                    return (
+                      <div key={event.id} className="flex mb-2 items-center">
+                        <div className="w-48 flex-shrink-0 pr-4">
+                          <p className="text-sm font-medium text-gray-900 truncate">{event.discipline}</p>
+                          <p className="text-xs text-gray-500">{totalBeds} Betten</p>
+                        </div>
+                        <div className="flex-1 relative h-10">
+                          <div
+                            className="absolute h-8 bg-blue-500 rounded flex items-center justify-center text-white text-xs font-medium hover:bg-blue-600 transition-colors cursor-pointer"
+                            style={{
+                              left: `${(startOffset / totalDays) * 100}%`,
+                              width: `${(duration / totalDays) * 100}%`,
+                            }}
+                            onClick={() => setSelectedEvent(event)}
+                          >
+                            {duration}d
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
