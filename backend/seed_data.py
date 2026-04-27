@@ -40,132 +40,112 @@ def seed_database():
 
         hotels_inventory_data = [
             ('Alpenlodge', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-22', 31, True, False),
-
+        
             ('Cube Alpine Stay', 'Bürs', 'Bludenz', 'DZ / DU', '2027-03-04', '2027-03-22', 17, False, False),
             ('Cube Alpine Stay', 'Bürs', 'Bludenz', 'APP: 3 DZ + 2 DU', '2027-03-04', '2027-03-22', 4, False, False),
             ('Cube Alpine Stay', 'Bürs', 'Bludenz', 'APP: 2 DZ + 2 DU', '2027-03-04', '2027-03-22', 6, False, False),
-
+        
             ('Hotel Daneu', 'Nüziders', 'Bludenz', 'DZ / DU', '2027-03-03', '2027-03-22', 9, True, True),
             ('Hotel Daneu', 'Nüziders', 'Bludenz', 'EZ / DU', '2027-03-03', '2027-03-22', 5, True, True),
-
+        
             ('Hotel Garni Madrisa', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-21', 9, True, True),
             ('Hotel Garni Madrisa', 'Brand', 'Bludenz', 'EZ / DU', '2027-03-07', '2027-03-21', 2, True, True),
-
+        
             ('Hotel Lagant', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-21', 30, True, True),
-
+        
             ('Hotel Lün', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-22', 12, False, False),
             ('Hotel Lün', 'Brand', 'Bludenz', 'APP: 2 DZ + 2 DU', '2027-03-07', '2027-03-22', 3, False, False),
-
+        
             ('Hotel Sarotla', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-22', 40, True, True),
-
+        
             ('Hotel Sonne', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-21', 11, True, False),
             ('Hotel Sonne', 'Brand', 'Bludenz', 'EZ / DU', '2027-03-07', '2027-03-21', 3, True, False),
-
+        
             ('Naturhotel Till', 'Satteins', 'Bludenz', 'DZ / DU', '2027-03-04', '2027-03-22', 9, True, True),
             ('Naturhotel Till', 'Satteins', 'Bludenz', 'EZ / DU', '2027-03-04', '2027-03-22', 9, True, True),
-
+        
             ('Rössle', 'Braz', 'Bludenz', 'DZ / DU', '2027-03-14', '2027-03-21', 10, True, True),
             ('Rössle', 'Braz', 'Bludenz', 'EZ / DU', '2027-03-14', '2027-03-21', 1, True, True),
-
+        
             ('Val Blu GmbH', 'Bludenz', 'Bludenz', 'DZ / DU', '2027-03-04', '2027-03-22', 26, True, True),
-
+        
             ('Hotel Löwen', 'Feldkirch', 'Feldkirch', 'DZ / DU', '2027-03-03', '2027-03-22', 21, True, True),
-
+        
+            # --- Montafon ---
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 5, True, True),
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 5, True, True),
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'APP: 1 DZ + DU', '2027-03-04', '2027-03-22', 1, True, True),
-
+        
             ('Chalet Sonne', 'Vandans', 'Montafon', 'DZ / DU', '2027-03-14', '2027-03-22', 27, True, False),
             ('Chalet Sonne', 'Vandans', 'Montafon', 'EZ / DU', '2027-03-14', '2027-03-22', 6, True, False),
             ('Chalet Sonne', 'Vandans', 'Montafon', '3BZ / DU', '2027-03-14', '2027-03-22', 3, True, False),
             ('Chalet Sonne', 'Vandans', 'Montafon', '4BZ / DU', '2027-03-14', '2027-03-22', 2, True, False),
             ('Chalet Sonne', 'Vandans', 'Montafon', 'APP: 2 DZ + 2 DU', '2027-03-14', '2027-03-22', 3, True, False),
             ('Chalet Sonne', 'Vandans', 'Montafon', 'APP: 2 DZ + 2 DU', '2027-03-14', '2027-03-22', 1, True, False),
-
+        
             ('Christophorus', 'Partenen', 'Montafon', 'DZ / DU', '2027-03-06', '2027-03-22', 2, False, True),
             ('Christophorus', 'Partenen', 'Montafon', 'EZ / DU', '2027-03-06', '2027-03-22', 1, False, True),
             ('Christophorus', 'Partenen', 'Montafon', 'APP: 1 DZ + DU', '2027-03-06', '2027-03-22', 1, False, True),
-
+        
             ('Die Montafonerin', 'Vandans', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-22', 17, True, True),
             ('Die Montafonerin', 'Vandans', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-22', 5, True, True),
             ('Die Montafonerin', 'Vandans', 'Montafon', 'APP: 2 DZ + DU', '2027-03-07', '2027-03-22', 2, True, True),
             ('Die Montafonerin', 'Vandans', 'Montafon', 'APP: 2 DZ + DU', '2027-03-07', '2027-03-22', 2, True, True),
             ('Die Montafonerin', 'Vandans', 'Montafon', 'APP: 2 DZ + 2 DU', '2027-03-07', '2027-03-22', 3, True, True),
-
+        
             ('Explorer Hotels', 'Gaschurn', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 25, True, False),
             ('Explorer Hotels', 'Gaschurn', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 25, True, False),
-
+        
             ('Gasthof zum Guten Tropfen', 'Partenen', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 3, False, False),
             ('Gasthof zum Guten Tropfen', 'Partenen', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-21', 2, False, False),
-
+        
             ('Hochjochstöbli', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 12, True, True),
             ('Hochjochstöbli', 'Schruns', 'Montafon', 'APP: 2 DZ + DU', '2027-03-07', '2027-03-21', 1, True, True),
-
+        
             ('Hotel Alpenrose', 'Gargellen', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-21', 18, True, True),
             ('Hotel Alpenrose', 'Gargellen', 'Montafon', 'APP: 2 DZ + 2 DU', '2027-03-04', '2027-03-21', 3, True, True),
-
+        
             ('Hotel Auhof', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 10, True, False),
             ('Hotel Auhof', 'Schruns', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-21', 6, True, False),
-
+        
             ('Hotel Bergerhof', 'Bartholomäberg', 'Montafon', 'DZ / DU', '2027-03-09', '2027-03-15', 4, True, True),
             ('Hotel Bergerhof', 'Bartholomäberg', 'Montafon', 'EZ / DU', '2027-03-09', '2027-03-15', 2, True, True),
             ('Hotel Bergerhof', 'Bartholomäberg', 'Montafon', 'APP: 2 DZ + DU', '2027-03-09', '2027-03-15', 2, True, True),
-
+        
             ('Hotel Bradabella', 'Gargellen', 'Montafon', 'DZ / DU', '2027-03-06', '2027-03-21', 2, True, True),
             ('Hotel Bradabella', 'Gargellen', 'Montafon', 'EZ / DU', '2027-03-06', '2027-03-21', 2, True, True),
-
+        
             ('Hotel Chesa Platina', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-22', 5, False, False),
             ('Hotel Chesa Platina', 'Schruns', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-22', 5, False, False),
-
+        
             ('Hotel Gasthof Adler', 'St. Gallenkirch', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 12, True, True),
             ('Hotel Gasthof Adler', 'St. Gallenkirch', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 8, True, True),
-
+        
             ('Hotel Hirschen', 'Silbertal', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 20, True, True),
             ('Hotel Hirschen', 'Silbertal', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-21', 2, True, True),
-
+        
             ('Hotel Litz', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-03', '2027-03-22', 9, True, True),
             ('Hotel Litz', 'Schruns', 'Montafon', 'APP: 2 DZ + DU', '2027-03-03', '2027-03-22', 1, True, True),
             ('Hotel Litz', 'Schruns', 'Montafon', 'APP: 2 DZ + DU', '2027-03-03', '2027-03-22', 1, True, True),
-
+        
             ('Hotel Marmotta', 'Gargellen', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-11', 4, False, True),
-
+        
             ('Hotel Montjola Nova', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-09', '2027-03-22', 19, True, False),
             ('Hotel Montjola Nova', 'Schruns', 'Montafon', 'EZ / DU', '2027-03-09', '2027-03-22', 1, True, False),
-
+        
             ('Hotel Pfeifer Domig GmbH', 'Gaschurn', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 7, True, True),
             ('Hotel Pfeifer Domig GmbH', 'Gaschurn', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 4, True, True),
-
+        
             ('Hotel Silvretta', 'Gortipohl', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 8, True, True),
             ('Hotel Silvretta', 'Gortipohl', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 2, True, True),
-
+        
             ('Hotel Zimba', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-08', '2027-03-22', 44, True, True),
-
+        
             ('Montafon Moments', 'Gortipohl', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 36, True, True),
-
-            ('Pension Faneskla', 'Silbertal', 'Montafon', 'DZ / DU', '2027-03-06', '2027-03-21', 2, False, True),
-            ('Pension Faneskla', 'Silbertal', 'Montafon', 'EZ / DU', '2027-03-06', '2027-03-21', 2, False, True),
-            ('Pension Faneskla', 'Silbertal', 'Montafon', 'APP: 1 DZ + DU', '2027-03-06', '2027-03-21', 1, False, True),
-            ('Pension Faneskla', 'Silbertal', 'Montafon', 'APP: 1 DZ + 1 EZ + DU', '2027-03-06', '2027-03-21', 2, False, True),
-
-            ('Pension Wilma', 'Gantschier', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 4, True, True),
-            ('Pension Wilma', 'Gantschier', 'Montafon', '3BZ / DU', '2027-03-07', '2027-03-21', 4, True, True),
-            ('Pension Wilma', 'Gantschier', 'Montafon', '4BZ / DU', '2027-03-07', '2027-03-21', 1, True, True),
-
-            ('Relax und Vitalhotel Adler KG', 'St. Anton i.M.', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-21', 9, True, True),
-            ('Relax und Vitalhotel Adler KG', 'St. Anton i.M.', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-21', 6, True, True),
-
-            ('Revier Mountain Lodge', 'St. Gallenkirch', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 9, True, True),
-
-            ('Sonnenhang', 'Gortipohl', 'Montafon', 'DZ / DU', '2027-03-09', '2027-03-22', 4, False, True),
-            ('Sonnenhang', 'Gortipohl', 'Montafon', 'APP: 2 DZ + DU', '2027-03-09', '2027-03-22', 1, False, True),
-            ('Sonnenhang', 'Gortipohl', 'Montafon', 'APP: 1 DZ + DU', '2027-03-09', '2027-03-22', 1, False, True),
-
-            ('Sporthotel Silvretta Montafon', 'Gaschurn', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 35, True, True),
-            ('Sporthotel Silvretta Montafon', 'Gaschurn', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-21', 12, True, True),
-
+        
             ('Post', 'Dalaas', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-15', 5, True, True),
             ('Post', 'Dalaas', 'Bludenz', 'EZ / DU', '2027-03-07', '2027-03-15', 13, True, True),
-
+        
             ('Tiroler Hof', 'Partenen', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 4, False, False),
             ('Tiroler Hof', 'Partenen', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 3, False, False),
         ]
