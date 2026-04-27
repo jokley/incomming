@@ -1,4 +1,4 @@
-from app_new import app, db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment
+from app import app, db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment
 from datetime import datetime
 
 def seed_database():
