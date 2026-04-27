@@ -8,12 +8,10 @@ export function Events() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [newEvent, setNewEvent] = useState<Partial<Event>>({
-    name: '',
+  const [newEvent, setNewEvent] = useState({
     discipline: '',
     startDate: '',
     endDate: '',
-    targetQuota: 0,
   });
 
   useEffect(() => {
@@ -35,17 +33,15 @@ export function Events() {
   };
 
   const handleAddEvent = async () => {
-    if (newEvent.name && newEvent.discipline && newEvent.startDate && newEvent.endDate && newEvent.targetQuota) {
+    if (newEvent.discipline && newEvent.startDate && newEvent.endDate) {
       try {
         await api.createEvent({
-          name: newEvent.name,
           discipline: newEvent.discipline,
           startDate: newEvent.startDate,
           endDate: newEvent.endDate,
-          targetQuota: newEvent.targetQuota,
         });
         await loadData();
-        setNewEvent({ name: '', discipline: '', startDate: '', endDate: '', targetQuota: 0 });
+        setNewEvent({ discipline: '', startDate: '', endDate: '' });
         setIsAdding(false);
       } catch (err) {
         setError('Fehler beim Hinzufügen des Events');
@@ -92,12 +88,16 @@ export function Events() {
     };
   };
 
-  const getQuotaColor = (current: number, target: number) => {
-    const percentage = (current / target) * 100;
-    if (percentage >= 100) return 'bg-green-500';
-    if (percentage >= 75) return 'bg-yellow-500';
-    if (percentage >= 50) return 'bg-orange-500';
-    return 'bg-red-500';
+  const getEventBeds = (event: Event) => {
+    if (!event.roomDemands) return 0;
+    return event.roomDemands.reduce((total, demand) => {
+      return total + (demand.roomCount * demand.roomType.maxPersons);
+    }, 0);
+  };
+
+  const getEventRooms = (event: Event) => {
+    if (!event.roomDemands) return 0;
+    return event.roomDemands.reduce((total, demand) => total + demand.roomCount, 0);
   };
 
   return (
@@ -122,17 +122,10 @@ export function Events() {
       {isAdding && (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Neues Event</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <input
               type="text"
-              placeholder="Event Name"
-              value={newEvent.name}
-              onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <input
-              type="text"
-              placeholder="Disziplin"
+              placeholder="Disziplin (z.B. Big Air)"
               value={newEvent.discipline}
               onChange={(e) => setNewEvent({ ...newEvent, discipline: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -151,13 +144,6 @@ export function Events() {
               onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-            <input
-              type="number"
-              placeholder="Soll-Kontingent"
-              value={newEvent.targetQuota || ''}
-              onChange={(e) => setNewEvent({ ...newEvent, targetQuota: parseInt(e.target.value) || 0 })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
           </div>
           <div className="flex gap-2">
             <button
@@ -169,7 +155,7 @@ export function Events() {
             <button
               onClick={() => {
                 setIsAdding(false);
-                setNewEvent({ name: '', discipline: '', startDate: '', endDate: '', targetQuota: 0 });
+                setNewEvent({ discipline: '', startDate: '', endDate: '' });
               }}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
             >
@@ -181,10 +167,14 @@ export function Events() {
 
       {events.length > 0 && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-6">Gantt Chart - Zeitlicher Verlauf</h3>
+          <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <Calendar className="w-5 h-5" />
+            Gantt Chart - Zeitlicher Verlauf
+          </h3>
 
           <div className="overflow-x-auto">
             <div className="min-w-[800px]">
+              {/* Date header */}
               <div className="flex mb-2 text-sm text-gray-600">
                 <div className="w-48 flex-shrink-0"></div>
                 <div className="flex-1 flex justify-between px-4">
@@ -200,30 +190,33 @@ export function Events() {
                 </div>
               </div>
 
+              {/* Events */}
               <div className="space-y-3">
                 {events.map((event) => {
                   const position = getEventPosition(event);
-                  const quotaPercentage = (event.currentQuota / event.targetQuota) * 100;
+                  const totalBeds = getEventBeds(event);
+                  const totalRooms = getEventRooms(event);
 
                   return (
                     <div key={event.id} className="flex items-center group">
                       <div className="w-48 flex-shrink-0 pr-4">
-                        <div className="text-sm font-medium text-gray-900">{event.name}</div>
-                        <div className="text-xs text-gray-500">{event.discipline}</div>
+                        <div className="text-sm font-medium text-gray-900">{event.discipline}</div>
+                        <div className="text-xs text-gray-500">
+                          {totalRooms} Zimmer · {totalBeds} Betten
+                        </div>
                       </div>
                       <div className="flex-1 relative h-12 bg-gray-100 rounded">
                         <div
-                          className="absolute top-1 h-10 rounded flex items-center px-3 text-white text-sm font-medium transition-all"
+                          className="absolute top-1 h-10 rounded flex items-center px-3 text-white text-sm font-medium transition-all bg-blue-500 hover:bg-blue-600"
                           style={position}
-                          title={`${event.currentQuota} / ${event.targetQuota}`}
+                          title={`${event.discipline}: ${totalRooms} Zimmer, ${totalBeds} Betten`}
                         >
-                          <div className={`absolute inset-0 rounded ${getQuotaColor(event.currentQuota, event.targetQuota)}`} />
                           <div className="relative z-10 flex items-center justify-between w-full">
                             <span className="truncate">
-                              {event.currentQuota} / {event.targetQuota}
+                              {totalRooms} Zimmer
                             </span>
                             <span className="text-xs ml-2">
-                              {quotaPercentage.toFixed(0)}%
+                              {totalBeds} Betten
                             </span>
                           </div>
                         </div>
@@ -242,28 +235,6 @@ export function Events() {
               </div>
             </div>
           </div>
-
-          <div className="mt-6 pt-4 border-t">
-            <h4 className="text-sm font-semibold text-gray-700 mb-2">Legende:</h4>
-            <div className="flex gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-500 rounded"></div>
-                <span className="text-gray-600">≥100% Kontingent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                <span className="text-gray-600">75-99% Kontingent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                <span className="text-gray-600">50-74% Kontingent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-red-500 rounded"></div>
-                <span className="text-gray-600">&lt;50% Kontingent</span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -274,53 +245,53 @@ export function Events() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Disziplin</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Von</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bis</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Soll-Kontingent</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ist-Kontingent</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dauer</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Zimmer</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betten</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {events.map((event) => {
-              const percentage = (event.currentQuota / event.targetQuota) * 100;
+              const start = new Date(event.startDate);
+              const end = new Date(event.endDate);
+              const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+              const totalRooms = getEventRooms(event);
+              const totalBeds = getEventBeds(event);
+
               return (
                 <tr key={event.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {event.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {event.discipline}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(event.startDate).toLocaleDateString('de-DE')}
+                    {start.toLocaleDateString('de-DE')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(event.endDate).toLocaleDateString('de-DE')}
+                    {end.toLocaleDateString('de-DE')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {event.targetQuota}
+                    {duration} {duration === 1 ? 'Tag' : 'Tage'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {event.currentQuota}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                    {totalRooms}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      percentage >= 100 ? 'bg-green-100 text-green-800' :
-                      percentage >= 75 ? 'bg-yellow-100 text-yellow-800' :
-                      percentage >= 50 ? 'bg-orange-100 text-orange-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {percentage.toFixed(0)}%
-                    </span>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                    {totalBeds}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+
+        {events.length === 0 && (
+          <div className="px-6 py-12 text-center text-gray-500">
+            Keine Events vorhanden. Klicken Sie auf "Event hinzufügen" um ein neues Event zu erstellen.
+          </div>
+        )}
       </div>
     </div>
   );
