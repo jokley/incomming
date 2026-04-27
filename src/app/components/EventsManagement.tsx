@@ -409,7 +409,7 @@ export function EventsManagement() {
       {/* Gantt Chart */}
       {events.length > 0 && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Events Timeline</h3>
+          <h3 className="text-lg font-semibold mb-4">Events Timeline - Bedarf pro Tag</h3>
           <div className="overflow-x-auto">
             {(() => {
               // Calculate date range
@@ -417,6 +417,28 @@ export function EventsManagement() {
               const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
               const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
               const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+              // Calculate daily demand
+              const dailyBeds: number[] = new Array(totalDays).fill(0);
+              events.forEach(event => {
+                const start = new Date(event.startDate);
+                const end = new Date(event.endDate);
+                const totalBeds = calculateTotalBeds(event.roomDemands);
+
+                for (let d = 0; d < totalDays; d++) {
+                  const currentDate = new Date(minDate);
+                  currentDate.setDate(currentDate.getDate() + d);
+
+                  if (currentDate >= start && currentDate <= end) {
+                    dailyBeds[d] += totalBeds;
+                  }
+                }
+              });
+
+              // Calculate rooms from beds: Betten / 1.5 = Zimmer
+              const dailyRooms = dailyBeds.map(beds => Math.ceil(beds / 1.5));
+              const dailyEZ = dailyRooms.map(rooms => Math.ceil(rooms / 2));
+              const dailyDZ = dailyRooms.map(rooms => Math.ceil(rooms / 2));
 
               // Generate date labels
               const dateLabels: string[] = [];
@@ -473,6 +495,74 @@ export function EventsManagement() {
                       </div>
                     );
                   })}
+
+                  {/* Daily Summary */}
+                  <div className="mt-6 pt-4 border-t-2 border-gray-300">
+                    <div className="flex mb-1">
+                      <div className="w-48 flex-shrink-0 pr-4">
+                        <p className="text-xs font-bold text-gray-900">Betten Gesamt</p>
+                      </div>
+                      <div className="flex-1 flex">
+                        {dailyBeds.map((beds, idx) => (
+                          <div
+                            key={idx}
+                            className="flex-1 text-center text-xs font-semibold border-l border-gray-200 px-1"
+                            style={{ minWidth: '40px' }}
+                          >
+                            {beds > 0 ? beds : '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex mb-1">
+                      <div className="w-48 flex-shrink-0 pr-4">
+                        <p className="text-xs font-semibold text-blue-700">Zimmer (÷1,5)</p>
+                      </div>
+                      <div className="flex-1 flex">
+                        {dailyRooms.map((rooms, idx) => (
+                          <div
+                            key={idx}
+                            className="flex-1 text-center text-xs text-blue-700 border-l border-gray-200 px-1"
+                            style={{ minWidth: '40px' }}
+                          >
+                            {rooms > 0 ? rooms : '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex mb-1">
+                      <div className="w-48 flex-shrink-0 pr-4">
+                        <p className="text-xs text-gray-600">EZ benötigt</p>
+                      </div>
+                      <div className="flex-1 flex">
+                        {dailyEZ.map((ez, idx) => (
+                          <div
+                            key={idx}
+                            className="flex-1 text-center text-xs text-gray-600 border-l border-gray-200 px-1"
+                            style={{ minWidth: '40px' }}
+                          >
+                            {ez > 0 ? ez : '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex">
+                      <div className="w-48 flex-shrink-0 pr-4">
+                        <p className="text-xs text-gray-600">DZ benötigt</p>
+                      </div>
+                      <div className="flex-1 flex">
+                        {dailyDZ.map((dz, idx) => (
+                          <div
+                            key={idx}
+                            className="flex-1 text-center text-xs text-gray-600 border-l border-gray-200 px-1"
+                            style={{ minWidth: '40px' }}
+                          >
+                            {dz > 0 ? dz : '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
