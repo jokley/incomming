@@ -1,31 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Loader2, Building2, Calendar, X } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-interface RoomType {
-  id: string;
-  name: string;
-  maxPersons: number;
-}
-
-interface HotelInventory {
-  id: string;
-  roomType: RoomType;
-  availableFrom: string;
-  availableUntil: string;
-  roomCount: number;
-  hasHalfBoard: boolean;
-  hasSR: boolean;
-}
-
-interface Hotel {
-  id: string;
-  name: string;
-  location?: string;
-  region?: string;
-  roomInventories: HotelInventory[];
-}
+import { api } from '../services/api';
+import { Hotel, RoomType } from '../types';
 
 export function HotelsManagement() {
   const [hotels, setHotels] = useState<Hotel[]>([]);
@@ -55,15 +31,10 @@ export function HotelsManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [hotelsRes, roomTypesRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/hotels`),
-        fetch(`${API_BASE_URL}/room-types`)
+      const [hotelsData, roomTypesData] = await Promise.all([
+        api.getHotels(),
+        api.getRoomTypes()
       ]);
-
-      if (!hotelsRes.ok || !roomTypesRes.ok) throw new Error('Failed to load');
-
-      const hotelsData = await hotelsRes.json();
-      const roomTypesData = await roomTypesRes.json();
 
       setHotels(hotelsData);
       setRoomTypes(roomTypesData);
@@ -79,17 +50,11 @@ export function HotelsManagement() {
     e.preventDefault();
 
     try {
-      const url = editingId
-        ? `${API_BASE_URL}/hotels/${editingId}`
-        : `${API_BASE_URL}/hotels`;
-
-      const response = await fetch(url, {
-        method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) throw new Error('Failed to save');
+      if (editingId) {
+        await api.updateHotel(editingId, formData);
+      } else {
+        await api.createHotel(formData);
+      }
 
       await loadData();
       setFormData({ name: '', location: '', region: '' });
@@ -114,11 +79,7 @@ export function HotelsManagement() {
     if (!confirm('Hotel wirklich löschen? Alle Inventories werden ebenfalls gelöscht.')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/hotels/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete');
+      await api.deleteHotel(id);
       await loadData();
       if (selectedHotel?.id === id) {
         setSelectedHotel(null);
@@ -133,13 +94,7 @@ export function HotelsManagement() {
     if (!selectedHotel) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/hotels/${selectedHotel.id}/inventory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inventoryForm),
-      });
-
-      if (!response.ok) throw new Error('Failed to add inventory');
+      await api.addHotelInventory(selectedHotel.id, inventoryForm);
 
       await loadData();
       setShowInventoryForm(false);
@@ -164,11 +119,7 @@ export function HotelsManagement() {
     if (!confirm('Inventory wirklich löschen?')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/hotels/${hotelId}/inventory/${inventoryId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete');
+      await api.deleteHotelInventory(hotelId, inventoryId);
       await loadData();
 
       // Update selected hotel
@@ -503,6 +454,107 @@ export function HotelsManagement() {
           )}
         </div>
       </div>
+
+      {/* Gantt Chart */}
+      {hotels.length > 0 && hotels.some(h => h.roomInventories && h.roomInventories.length > 0) && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Hotel Kontingente Timeline</h3>
+          <div className="overflow-x-auto">
+            {(() => {
+              // Get all inventories with dates
+              const allInventories = hotels.flatMap(hotel =>
+                (hotel.roomInventories || []).map(inv => ({
+                  hotel,
+                  inventory: inv,
+                  startDate: new Date(inv.availableFrom),
+                  endDate: new Date(inv.availableUntil),
+                }))
+              );
+
+              if (allInventories.length === 0) return null;
+
+              // Calculate date range
+              const allDates = allInventories.flatMap(item => [item.startDate, item.endDate]);
+              const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+              const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+              const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+              // Generate date labels
+              const dateLabels: string[] = [];
+              for (let i = 0; i < totalDays; i++) {
+                const date = new Date(minDate);
+                date.setDate(date.getDate() + i);
+                dateLabels.push(date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }));
+              }
+
+              // Group by hotel
+              const hotelGroups = hotels.filter(h => h.roomInventories && h.roomInventories.length > 0);
+
+              return (
+                <div className="min-w-full">
+                  {/* Timeline header */}
+                  <div className="flex mb-2">
+                    <div className="w-64 flex-shrink-0"></div>
+                    <div className="flex-1 flex">
+                      {dateLabels.map((label, idx) => (
+                        <div
+                          key={idx}
+                          className="flex-1 text-center text-xs text-gray-600 border-l border-gray-200 px-1"
+                          style={{ minWidth: '40px' }}
+                        >
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Hotels and their inventories */}
+                  {hotelGroups.map((hotel) => (
+                    <div key={hotel.id} className="mb-4">
+                      <div className="flex items-center mb-1">
+                        <div className="w-64 flex-shrink-0">
+                          <p className="text-sm font-semibold text-gray-900">{hotel.name}</p>
+                          <p className="text-xs text-gray-500">{hotel.location}, {hotel.region}</p>
+                        </div>
+                      </div>
+                      {hotel.roomInventories?.map((inv) => {
+                        const start = new Date(inv.availableFrom);
+                        const end = new Date(inv.availableUntil);
+                        const startOffset = Math.floor((start.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                        const totalBeds = inv.roomCount * inv.roomType.maxPersons;
+
+                        return (
+                          <div key={inv.id} className="flex mb-1 items-center">
+                            <div className="w-64 flex-shrink-0 pr-4 pl-4">
+                              <p className="text-xs text-gray-700 truncate">{inv.roomType.name}</p>
+                              <p className="text-xs text-gray-500">
+                                {inv.roomCount} Zimmer • {totalBeds} Betten
+                              </p>
+                            </div>
+                            <div className="flex-1 relative h-8">
+                              <div
+                                className="absolute h-6 bg-green-500 rounded flex items-center justify-center text-white text-xs font-medium hover:bg-green-600 transition-colors cursor-pointer"
+                                style={{
+                                  left: `${(startOffset / totalDays) * 100}%`,
+                                  width: `${(duration / totalDays) * 100}%`,
+                                }}
+                                onClick={() => setSelectedHotel(hotel)}
+                              >
+                                {duration}d
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
