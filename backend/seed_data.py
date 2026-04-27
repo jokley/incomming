@@ -1,134 +1,137 @@
-from app import app, db, Hotel, RoomCategory, Athlete, Event
-from datetime import datetime
+from app import app, db, Athlete, Hotel, Event, RoomCategory
+from datetime import datetime, timedelta
 import json
-
 
 def seed_database():
     with app.app_context():
+        # Clear existing data
         db.drop_all()
         db.create_all()
 
-        # ------------------------
-        # HOTELS
-        # ------------------------
+        # Create hotels with room details
         hotels_data = [
             {
-                "name": "Alpenlodge",
-                "location": "Brand",
-                "region": "Bludenz",
-                "single_rooms": 0,
-                "double_rooms": 31,
-                "categories": [
-                    {"name": "DZ / DU", "count": 31, "type": "double"}
+                'name': 'Grand Hotel Alpine',
+                'location': 'Innsbruck',
+                'region': 'Tirol',
+                'single_rooms': 20,
+                'double_rooms': 25,
+                'categories': [
+                    {'name': '1x DZ + DU', 'count': 15, 'type': 'double', 'amenities': ['Dusche', 'TV', 'WLAN']},
+                    {'name': '2x DZ + 2x DU', 'count': 10, 'type': 'double', 'amenities': ['2 Duschen', 'TV', 'WLAN', 'Balkon']},
+                    {'name': '1x EZ + DU', 'count': 20, 'type': 'single', 'amenities': ['Dusche', 'TV', 'WLAN']}
                 ]
             },
             {
-                "name": "Cube Alpine Stay",
-                "location": "Bürs",
-                "region": "Bludenz",
-                "single_rooms": 0,
-                "double_rooms": 17,
-                "categories": [
-                    {"name": "DZ / DU", "count": 17, "type": "double"},
-                    {"name": "APP: 3 DZ + 2 DU", "count": 4, "type": "apartment"},
-                    {"name": "APP: 2 DZ + 2 DU", "count": 6, "type": "apartment"}
+                'name': 'Mountain Resort',
+                'location': 'St. Anton',
+                'region': 'Tirol',
+                'single_rooms': 15,
+                'double_rooms': 20,
+                'categories': [
+                    {'name': '1x DZ + DU', 'count': 20, 'type': 'double', 'amenities': ['Dusche', 'TV']},
+                    {'name': '1x EZ + DU', 'count': 15, 'type': 'single', 'amenities': ['Dusche', 'TV']}
                 ]
             },
             {
-                "name": "Hotel Daneu",
-                "location": "Nüziders",
-                "region": "Bludenz",
-                "single_rooms": 5,
-                "double_rooms": 9,
-                "categories": [
-                    {"name": "DZ / DU", "count": 9, "type": "double"},
-                    {"name": "EZ / DU", "count": 5, "type": "single"}
+                'name': 'Snow Peak Lodge',
+                'location': 'Sölden',
+                'region': 'Tirol',
+                'single_rooms': 12,
+                'double_rooms': 18,
+                'categories': [
+                    {'name': '1x DZ + DU', 'count': 18, 'type': 'double', 'amenities': ['Dusche', 'TV', 'WLAN']},
+                    {'name': '1x EZ + DU', 'count': 12, 'type': 'single', 'amenities': ['Dusche', 'TV']}
                 ]
             },
             {
-                "name": "Hotel Sonne",
-                "location": "Brand",
-                "region": "Bludenz",
-                "single_rooms": 3,
-                "double_rooms": 11,
-                "categories": [
-                    {"name": "DZ / DU", "count": 11, "type": "double"},
-                    {"name": "EZ / DU", "count": 3, "type": "single"}
+                'name': 'Vista Hotel',
+                'location': 'Kitzbühel',
+                'region': 'Tirol',
+                'single_rooms': 10,
+                'double_rooms': 15,
+                'categories': [
+                    {'name': '1x DZ + DU', 'count': 15, 'type': 'double', 'amenities': ['Dusche', 'Safe']},
+                    {'name': '1x EZ + DU', 'count': 10, 'type': 'single', 'amenities': ['Dusche']}
                 ]
             }
         ]
 
-        for h in hotels_data:
+        for hotel_data in hotels_data:
             hotel = Hotel(
-                name=h["name"],
-                location=h["location"],
-                region=h["region"],
-                single_rooms=h["single_rooms"],
-                double_rooms=h["double_rooms"]
+                name=hotel_data['name'],
+                location=hotel_data['location'],
+                region=hotel_data['region'],
+                single_rooms=hotel_data['single_rooms'],
+                double_rooms=hotel_data['double_rooms']
             )
             db.session.add(hotel)
-            db.session.flush()
+            db.session.flush()  # Get hotel.id
 
-            for cat in h["categories"]:
-                db.session.add(RoomCategory(
+            # Add room categories
+            for cat in hotel_data['categories']:
+                room_cat = RoomCategory(
                     hotel_id=hotel.id,
-                    name=cat["name"],
-                    count=cat["count"],
-                    room_type=cat["type"],
-                    amenities=json.dumps([])
-                ))
+                    name=cat['name'],
+                    count=cat['count'],
+                    room_type=cat['type'],
+                    amenities=json.dumps(cat['amenities'])
+                )
+                db.session.add(room_cat)
 
         db.session.commit()
 
-        # ------------------------
-        # ATHLETES
-        # ------------------------
+        # Create athletes with room types
         athletes_data = [
-            ("Jakob Dusek", "AUT", "Snowboard Cross", 1, "double"),
-            ("Lukas Pachner", "AUT", "Snowboard Cross", 1, "double"),
-            ("Alessandro Haemmerle", "AUT", "Snowboard Cross", 2, "single"),
-            ("Elias Leitner", "AUT", "Snowboard Cross", 2, "double"),
-            ("David Pickl", "AUT", "Snowboard Cross", 2, "double"),
-            ("Tanja Kobald", "AUT", "Snowboard Cross", 3, "double"),
-            ("Anna Galler", "AUT", "Snowboard Cross", 3, "double"),
-            ("Pia Zerkhold", "AUT", "Snowboard Cross", 4, "single"),
+            ('Anna Schmidt', 'Deutschland', 'Moguls', 1, 'single'),
+            ('John Smith', 'USA', 'Big Air', 1, 'double'),
+            ('Sophie Martin', 'Frankreich', 'Slopestyle', 2, 'double'),
+            ('Yuki Tanaka', 'Japan', 'Halfpipe', 2, 'double'),
+            ('Lars Hansen', 'Norwegen', 'Moguls', 3, 'single'),
+            ('Maria Garcia', 'Spanien', 'Big Air', None, None),
+            ('Pietro Rossi', 'Italien', 'Slopestyle', None, None),
+            ('Emma Johnson', 'Kanada', 'Halfpipe', 3, 'double'),
+            ('Max Müller', 'Deutschland', 'Big Air', 1, 'double'),
+            ('Lisa Andersson', 'Schweden', 'Moguls', None, None),
         ]
 
         for name, nation, discipline, hotel_id, room_type in athletes_data:
-            db.session.add(Athlete(
+            athlete = Athlete(
                 name=name,
                 nation=nation,
                 discipline=discipline,
                 hotel_id=hotel_id,
                 room_type=room_type
-            ))
+            )
+            db.session.add(athlete)
 
         db.session.commit()
 
-        # ------------------------
-        # EVENTS (from your quota table)
-        # ------------------------
+        # Create events
+        base_date = datetime(2027, 2, 1)
         events_data = [
-            ("Big Air", "Big Air", "2027-03-07", "2027-03-14", 141),
-            ("Moguls", "Moguls", "2027-03-12", "2027-03-20", 57),
-            ("Parallel", "Parallel", "2027-03-04", "2027-03-11", 57),
-            ("Slopestyle", "Slopestyle", "2027-03-12", "2027-03-21", 142),
-            ("Snowboard Cross", "Snowboard Cross", "2027-03-16", "2027-03-22", 60),
+            ('Big Air Qualifikation', 'Big Air', base_date, base_date + timedelta(days=2), 50),
+            ('Big Air Finale', 'Big Air', base_date + timedelta(days=3), base_date + timedelta(days=4), 30),
+            ('Moguls Qualifikation', 'Moguls', base_date + timedelta(days=5), base_date + timedelta(days=6), 60),
+            ('Moguls Finale', 'Moguls', base_date + timedelta(days=7), base_date + timedelta(days=8), 40),
+            ('Slopestyle Training', 'Slopestyle', base_date + timedelta(days=9), base_date + timedelta(days=10), 70),
+            ('Slopestyle Wettkampf', 'Slopestyle', base_date + timedelta(days=11), base_date + timedelta(days=13), 50),
+            ('Halfpipe Qualifikation', 'Halfpipe', base_date + timedelta(days=14), base_date + timedelta(days=15), 55),
+            ('Halfpipe Finale', 'Halfpipe', base_date + timedelta(days=16), base_date + timedelta(days=17), 35),
         ]
 
         for name, discipline, start, end, quota in events_data:
-            db.session.add(Event(
+            event = Event(
                 name=name,
                 discipline=discipline,
-                start_date=datetime.strptime(start, "%Y-%m-%d").date(),
-                end_date=datetime.strptime(end, "%Y-%m-%d").date(),
+                start_date=start.date(),
+                end_date=end.date(),
                 target_quota=quota
-            ))
+            )
+            db.session.add(event)
 
         db.session.commit()
+        print('✅ Datenbank erfolgreich initialisiert!')
 
-        print("✅ Seed data loaded successfully!")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     seed_database()

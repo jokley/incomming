@@ -2,9 +2,12 @@ import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./components/Dashboard";
 import { Athletes } from "./components/Athletes";
-import { Hotels } from "./components/Hotels";
 import { Assignments } from "./components/Assignments";
-import { Events } from "./components/Events";
+import { DataImport } from "./components/DataImport";
+import { RoomAnalytics } from "./components/RoomAnalytics";
+import { RoomTypesManagement } from "./components/RoomTypesManagement";
+import { HotelsManagement } from "./components/HotelsManagement";
+import { EventsManagement } from "./components/EventsManagement";
 
 export const router = createBrowserRouter([
   {
@@ -13,9 +16,12 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Dashboard },
       { path: "athletes", Component: Athletes },
-      { path: "hotels", Component: Hotels },
       { path: "assignments", Component: Assignments },
-      { path: "events", Component: Events },
+      { path: "room-types", Component: RoomTypesManagement },
+      { path: "hotels", Component: HotelsManagement },
+      { path: "events", Component: EventsManagement },
+      { path: "import", Component: DataImport },
+      { path: "analytics", Component: RoomAnalytics },
     ],
   },
 ]);

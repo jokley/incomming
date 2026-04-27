@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router';
-import { LayoutDashboard, Users, Hotel, UserCheck, Calendar } from 'lucide-react';
+import { LayoutDashboard, Users, Hotel, UserCheck, Calendar, Upload, BarChart3, Layers } from 'lucide-react';
 
 export function Layout() {
   return (
@@ -40,6 +40,19 @@ export function Layout() {
                   Athleten
                 </NavLink>
                 <NavLink
+                  to="/room-types"
+                  className={({ isActive }) =>
+                    `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
+                      isActive
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`
+                  }
+                >
+                  <Layers className="w-5 h-5 mr-2" />
+                  Zimmertypen
+                </NavLink>
+                <NavLink
                   to="/hotels"
                   className={({ isActive }) =>
                     `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
@@ -53,19 +66,6 @@ export function Layout() {
                   Hotels
                 </NavLink>
                 <NavLink
-                  to="/assignments"
-                  className={({ isActive }) =>
-                    `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
-                      isActive
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`
-                  }
-                >
-                  <UserCheck className="w-5 h-5 mr-2" />
-                  Zuweisungen
-                </NavLink>
-                <NavLink
                   to="/events"
                   className={({ isActive }) =>
                     `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
@@ -77,6 +77,32 @@ export function Layout() {
                 >
                   <Calendar className="w-5 h-5 mr-2" />
                   Events
+                </NavLink>
+                <NavLink
+                  to="/analytics"
+                  className={({ isActive }) =>
+                    `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
+                      isActive
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`
+                  }
+                >
+                  <BarChart3 className="w-5 h-5 mr-2" />
+                  Analysen
+                </NavLink>
+                <NavLink
+                  to="/import"
+                  className={({ isActive }) =>
+                    `inline-flex items-center px-3 py-2 border-b-2 transition-colors ${
+                      isActive
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`
+                  }
+                >
+                  <Upload className="w-5 h-5 mr-2" />
+                  Import
                 </NavLink>
               </div>
             </div>

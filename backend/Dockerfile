@@ -7,9 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Initialize database with seed data
-RUN python seed_data.py
-
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+CMD ["python", "app_new.py"]

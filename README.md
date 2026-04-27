@@ -1,6 +1,10 @@
 # Freestyle WM 2027 - Event Management System
 
-Event-Management-Software für die Organisation der Freestyle-Weltmeisterschaft mit Athletenverwaltung, Hotelzuweisungen und Dashboard-Auswertungen.
+⛷️ Event-Management-Software für die Organisation der Freestyle-Weltmeisterschaft 2027 🏂
+
+Event-Management-Software für die Organisation der Freestyle-Weltmeisterschaft mit Athletenverwaltung, Hotelzuweisungen, CSV-Import und professionellen Analysen.
+
+⚠️ **WICHTIG**: Dieses System wurde komplett neu strukturiert basierend auf der Tabellenstruktur aus `hotel-zimmer-preise.csv`. Siehe `SETUP.md` für Details.
 
 ## 🏗️ Architektur
 
@@ -160,11 +164,26 @@ Persistente Daten werden im Volume `backend-data` gespeichert.
 
 ## 🔧 Konfiguration
 
-Umgebungsvariablen in `.env`:
+### Environment Variables
 
+Das System nutzt Vite Environment Variables:
+
+**Lokal (Development):**
 ```env
 VITE_API_URL=http://localhost:5000/api
 ```
+
+**Production:**
+```env
+VITE_API_URL=https://incoming.jokley.at/api
+```
+
+Dateien:
+- `.env.development` - Lokale Entwicklung
+- `.env.production` - Production Build
+- `.env` - Fallback (Production)
+
+Siehe `DEPLOYMENT.md` für Details zum Production-Setup.
 
 ## 💡 Zimmerverwaltung - 50/50 Regel
 
@@ -189,6 +208,28 @@ Hotels können verschiedene Zimmerkategorien definieren:
 - `1x EZ + DU` - 1 Einzelzimmer mit 1 Dusche
 
 Jede Kategorie kann Ausstattungsmerkmale haben (TV, WLAN, Balkon, etc.).
+
+## 🆕 Neue Architektur (v2.0)
+
+Das System wurde komplett neu strukturiert:
+
+### Datenbankmodell
+- **RoomType** - Zimmertypen mit MaxPersonen
+- **Hotel + HotelRoomInventory** - Hotels mit Zimmern pro Zeitraum
+- **Event + EventRoomDemand** - Events mit Bedarf
+- **Athlete** - Athleten mit allen Details
+- **RoomAssignment** - Zimmerzuteilungen
+
+### CSV Import
+Importieren Sie alle Daten aus einer CSV-Datei über `/import`
+
+### Analysen
+Detaillierte Auswertungen unter `/analytics`:
+- Verfügbarkeit vs. Bedarf pro Zimmertyp
+- Betten-Kapazität Berechnungen
+- Status-Übersicht (ausreichend/fehlend)
+
+Siehe `SETUP.md` für vollständige Dokumentation!
 
 ## 📝 Lizenz
 
