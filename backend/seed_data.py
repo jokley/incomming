@@ -38,7 +38,7 @@ def seed_database():
         # 2. Hotels with Inventories (Sample subset from CSV)
         print("🏨 Erstelle Hotels und Inventories...")
 
-       hotels_inventory_data = [
+        hotels_inventory_data = [
             ('Alpenlodge', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-22', 31, True, False),
         
             ('Cube Alpine Stay', 'Bürs', 'Bludenz', 'DZ / DU', '2027-03-04', '2027-03-22', 17, False, False),
