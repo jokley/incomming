@@ -130,6 +130,7 @@ class Athlete(db.Model):
     lastname = db.Column(db.String(100), nullable=False)
     firstname = db.Column(db.String(100), nullable=False)
     nation_code = db.Column(db.String(10), nullable=False)
+    discipline = db.Column(db.String(100))  # Big Air, Moguls, Slopestyle, etc.
     gender = db.Column(db.String(10))
     for_gender = db.Column(db.String(10))  # Competition gender
     phone = db.Column(db.String(50))
@@ -182,6 +183,7 @@ class Athlete(db.Model):
             'lastname': self.lastname,
             'firstname': self.firstname,
             'nationCode': self.nation_code,
+            'discipline': self.discipline,
             'gender': self.gender,
             'forGender': self.for_gender,
             'phone': self.phone,
