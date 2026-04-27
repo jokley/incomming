@@ -11,8 +11,9 @@ export function Athletes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newAthlete, setNewAthlete] = useState<Partial<Athlete>>({
-    name: '',
-    nation: '',
+    lastname: '',
+    firstname: '',
+    nationCode: '',
     discipline: '',
   });
 
@@ -39,22 +40,29 @@ export function Athletes() {
   };
 
   const filteredAthletes = athletes.filter(
-    athlete =>
-      athlete.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      athlete.nation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      athlete.discipline.toLowerCase().includes(searchTerm.toLowerCase())
+    athlete => {
+      const search = searchTerm.toLowerCase();
+      const fullName = `${athlete.firstname} ${athlete.lastname}`.toLowerCase();
+      const nation = (athlete.nationCode || '').toLowerCase();
+      const discipline = (athlete.discipline || '').toLowerCase();
+
+      return fullName.includes(search) ||
+             nation.includes(search) ||
+             discipline.includes(search);
+    }
   );
 
   const handleAddAthlete = async () => {
-    if (newAthlete.name && newAthlete.nation && newAthlete.discipline) {
+    if (newAthlete.lastname && newAthlete.firstname && newAthlete.nationCode) {
       try {
         await api.createAthlete({
-          name: newAthlete.name,
-          nation: newAthlete.nation,
-          discipline: newAthlete.discipline,
+          lastname: newAthlete.lastname,
+          firstname: newAthlete.firstname,
+          nationCode: newAthlete.nationCode,
+          function: 'Athlete',
         });
         await loadData();
-        setNewAthlete({ name: '', nation: '', discipline: '' });
+        setNewAthlete({ lastname: '', firstname: '', nationCode: '', discipline: '' });
         setIsAdding(false);
       } catch (err) {
         setError('Fehler beim Hinzufügen des Athleten');
@@ -117,25 +125,32 @@ export function Athletes() {
       {isAdding && (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Neuer Athlet</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <input
               type="text"
-              placeholder="Name"
-              value={newAthlete.name}
-              onChange={(e) => setNewAthlete({ ...newAthlete, name: e.target.value })}
+              placeholder="Vorname"
+              value={newAthlete.firstname || ''}
+              onChange={(e) => setNewAthlete({ ...newAthlete, firstname: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
               type="text"
-              placeholder="Nation"
-              value={newAthlete.nation}
-              onChange={(e) => setNewAthlete({ ...newAthlete, nation: e.target.value })}
+              placeholder="Nachname"
+              value={newAthlete.lastname || ''}
+              onChange={(e) => setNewAthlete({ ...newAthlete, lastname: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
               type="text"
-              placeholder="Disziplin"
-              value={newAthlete.discipline}
+              placeholder="Nation (z.B. AUT)"
+              value={newAthlete.nationCode || ''}
+              onChange={(e) => setNewAthlete({ ...newAthlete, nationCode: e.target.value })}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <input
+              type="text"
+              placeholder="Disziplin (optional)"
+              value={newAthlete.discipline || ''}
               onChange={(e) => setNewAthlete({ ...newAthlete, discipline: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
@@ -150,7 +165,7 @@ export function Athletes() {
             <button
               onClick={() => {
                 setIsAdding(false);
-                setNewAthlete({ name: '', nation: '', discipline: '' });
+                setNewAthlete({ lastname: '', firstname: '', nationCode: '', discipline: '' });
               }}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
             >
@@ -174,7 +189,7 @@ export function Athletes() {
                 Disziplin
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Hotel
+                Funktion
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Aktionen
@@ -185,35 +200,23 @@ export function Athletes() {
             {filteredAthletes.map((athlete) => (
               <tr key={athlete.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {athlete.name}
+                  {athlete.firstname} {athlete.lastname}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {athlete.nation}
+                  {athlete.nationCode}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {athlete.discipline}
+                  {athlete.discipline || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {athlete.hotelId ? (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                      {hotels.find(h => h.id === athlete.hotelId)?.name}
-                    </span>
-                  ) : (
-                    <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
-                      Nicht zugewiesen
-                    </span>
-                  )}
+                  <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
+                    {athlete.function || 'Athlete'}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="flex gap-2">
                     <button className="text-blue-600 hover:text-blue-800">
                       <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(athlete.id)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>
