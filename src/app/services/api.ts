@@ -20,7 +20,7 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // USE MOCK DATA - Set to true for offline testing
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 
 // Create mutable copies of mock data that persist within the session
 let mockRoomTypes = [...initialRoomTypes];
