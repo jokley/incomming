@@ -549,10 +549,18 @@ def create_room_assignment():
     return jsonify(assignment.to_dict()), 201
 
 
+@app.route('/api/room-assignments/<int:assignment_id>', methods=['DELETE'])
+def delete_room_assignment(assignment_id):
+    assignment = RoomAssignment.query.get_or_404(assignment_id)
+    db.session.delete(assignment)
+    db.session.commit()
+    return '', 204
+
+
 # Statistics & Analytics
 @app.route('/api/analytics/room-availability', methods=['GET'])
 def get_room_availability():
-    """Compare room demand vs availability"""
+    """Compare room demand vs availability - normalized to EZ/DZ"""
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
@@ -564,9 +572,14 @@ def get_room_availability():
     # Get all room types
     room_types = RoomType.query.all()
 
-    result = []
+    # Accumulate beds for EZ and DZ
+    ez_available = 0
+    dz_available = 0
+    ez_demand = 0
+    dz_demand = 0
+
     for rt in room_types:
-        # Calculate total available rooms
+        # Calculate available rooms
         query = HotelRoomInventory.query.filter_by(room_type_id=rt.id)
         if start_date and end_date:
             query = query.filter(
@@ -574,7 +587,14 @@ def get_room_availability():
                 HotelRoomInventory.available_until >= start_date
             )
 
-        total_available = sum([inv.room_count for inv in query.all()])
+        inventories = query.all()
+        for inv in inventories:
+            beds = inv.room_count * rt.max_persons
+            if rt.max_persons == 1:
+                ez_available += inv.room_count
+            else:
+                # DZ: beds / 2
+                dz_available += beds // 2
 
         # Calculate demand
         demand_query = EventRoomDemand.query.filter_by(room_type_id=rt.id)
@@ -584,14 +604,30 @@ def get_room_availability():
                 Event.end_date >= start_date
             )
 
-        total_demand = sum([d.room_count for d in demand_query.all()])
+        demands = demand_query.all()
+        for demand in demands:
+            beds = demand.room_count * rt.max_persons
+            if rt.max_persons == 1:
+                ez_demand += demand.room_count
+            else:
+                # DZ: beds / 2
+                dz_demand += beds // 2
 
-        result.append({
-            'roomType': rt.to_dict(),
-            'available': total_available,
-            'demand': total_demand,
-            'difference': total_available - total_demand
-        })
+    # Return normalized EZ/DZ
+    result = [
+        {
+            'roomType': {'id': 'ez', 'name': 'EZ / DU', 'maxPersons': 1},
+            'available': ez_available,
+            'demand': ez_demand,
+            'difference': ez_available - ez_demand
+        },
+        {
+            'roomType': {'id': 'dz', 'name': 'DZ / DU', 'maxPersons': 2},
+            'available': dz_available,
+            'demand': dz_demand,
+            'difference': dz_available - dz_demand
+        }
+    ]
 
     return jsonify(result)
 
