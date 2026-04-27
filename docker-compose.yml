@@ -26,7 +26,7 @@ services:
       - ./src:/app/src
       - ./public:/app/public
     environment:
-      - VITE_API_URL=http://incoming.jokley.at/api
+      - VITE_API_URL=https://incoming.jokley.at/api
     depends_on:
       - backend
     networks:
