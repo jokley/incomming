@@ -38,7 +38,7 @@ def seed_database():
         # 2. Hotels with Inventories (Sample subset from CSV)
         print("🏨 Erstelle Hotels und Inventories...")
 
-        hotels_inventory_data = [
+       hotels_inventory_data = [
             ('Alpenlodge', 'Brand', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-22', 31, True, False),
         
             ('Cube Alpine Stay', 'Bürs', 'Bludenz', 'DZ / DU', '2027-03-04', '2027-03-22', 17, False, False),
@@ -71,7 +71,6 @@ def seed_database():
         
             ('Hotel Löwen', 'Feldkirch', 'Feldkirch', 'DZ / DU', '2027-03-03', '2027-03-22', 21, True, True),
         
-            # --- Montafon ---
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 5, True, True),
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-22', 5, True, True),
             ('BergSPA & Hotel Zamangspitze', 'St. Gallenkirch', 'Montafon', 'APP: 1 DZ + DU', '2027-03-04', '2027-03-22', 1, True, True),
@@ -142,6 +141,27 @@ def seed_database():
             ('Hotel Zimba', 'Schruns', 'Montafon', 'DZ / DU', '2027-03-08', '2027-03-22', 44, True, True),
         
             ('Montafon Moments', 'Gortipohl', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 36, True, True),
+        
+            ('Pension Faneskla', 'Silbertal', 'Montafon', 'DZ / DU', '2027-03-06', '2027-03-21', 2, False, True),
+            ('Pension Faneskla', 'Silbertal', 'Montafon', 'EZ / DU', '2027-03-06', '2027-03-21', 2, False, True),
+            ('Pension Faneskla', 'Silbertal', 'Montafon', 'APP: 1 DZ + DU', '2027-03-06', '2027-03-21', 1, False, True),
+            ('Pension Faneskla', 'Silbertal', 'Montafon', 'APP: 1 DZ + 1 EZ + DU', '2027-03-06', '2027-03-21', 2, False, True),
+        
+            ('Pension Wilma', 'Gantschier', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 4, True, True),
+            ('Pension Wilma', 'Gantschier', 'Montafon', '3BZ / DU', '2027-03-07', '2027-03-21', 4, True, True),
+            ('Pension Wilma', 'Gantschier', 'Montafon', '4BZ / DU', '2027-03-07', '2027-03-21', 1, True, True),
+        
+            ('Relax und Vitalhotel Adler KG', 'St. Anton i.M.', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-21', 9, True, True),
+            ('Relax und Vitalhotel Adler KG', 'St. Anton i.M.', 'Montafon', 'EZ / DU', '2027-03-04', '2027-03-21', 6, True, True),
+        
+            ('Revier Mountain Lodge', 'St. Gallenkirch', 'Montafon', 'DZ / DU', '2027-03-04', '2027-03-22', 9, True, True),
+        
+            ('Sonnenhang', 'Gortipohl', 'Montafon', 'DZ / DU', '2027-03-09', '2027-03-22', 4, False, True),
+            ('Sonnenhang', 'Gortipohl', 'Montafon', 'APP: 2 DZ + DU', '2027-03-09', '2027-03-22', 1, False, True),
+            ('Sonnenhang', 'Gortipohl', 'Montafon', 'APP: 1 DZ + DU', '2027-03-09', '2027-03-22', 1, False, True),
+        
+            ('Sporthotel Silvretta Montafon', 'Gaschurn', 'Montafon', 'DZ / DU', '2027-03-07', '2027-03-21', 35, True, True),
+            ('Sporthotel Silvretta Montafon', 'Gaschurn', 'Montafon', 'EZ / DU', '2027-03-07', '2027-03-21', 12, True, True),
         
             ('Post', 'Dalaas', 'Bludenz', 'DZ / DU', '2027-03-07', '2027-03-15', 5, True, True),
             ('Post', 'Dalaas', 'Bludenz', 'EZ / DU', '2027-03-07', '2027-03-15', 13, True, True),
