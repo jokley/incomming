@@ -43,25 +43,77 @@ export function Dashboard() {
     }
   };
 
-  // Calculate total bed capacity (AVAILABILITY - IST)
-  const totalBedsAvailable = hotels.reduce((sum, hotel) => {
-    if (!hotel.roomInventories) return sum;
-    return sum + hotel.roomInventories.reduce((hotelSum, inv) => {
-      return hotelSum + (inv.roomCount * inv.roomType.maxPersons);
-    }, 0);
-  }, 0);
+  // Calculate date range from both hotels and events (same as Analytics)
+  const hotelDates = hotels.flatMap(h =>
+    (h.roomInventories || []).flatMap(inv => [
+      new Date(inv.availableFrom),
+      new Date(inv.availableUntil)
+    ])
+  );
 
-  // Calculate total bed demand (DEMAND - SOLL)
-  const totalBedsDemand = events.reduce((sum, event) => {
-    if (!event.roomDemands) return sum;
-    return sum + event.roomDemands.reduce((eventSum, demand) => {
-      return eventSum + (demand.roomCount * demand.roomType.maxPersons);
-    }, 0);
-  }, 0);
+  const eventDates = events.flatMap(e => [
+    new Date(e.startDate),
+    new Date(e.endDate)
+  ]);
 
-  // Convert beds to rooms using the 1.5 factor (same as Analytics)
-  const totalRoomsAvailable = Math.ceil(totalBedsAvailable / 1.5);
-  const totalRoomsDemand = Math.ceil(totalBedsDemand / 1.5);
+  const allDates = [...hotelDates, ...eventDates];
+
+  let totalBedsAvailable = 0;
+  let totalBedsDemand = 0;
+  let totalRoomsAvailable = 0;
+  let totalRoomsDemand = 0;
+
+  if (allDates.length > 0) {
+    const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+    const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+    const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Calculate daily availability (hotels) - same logic as Analytics
+    const dailyAvailableBeds: number[] = new Array(totalDays).fill(0);
+    hotels.forEach(hotel => {
+      hotel.roomInventories?.forEach(inv => {
+        const start = new Date(inv.availableFrom);
+        const end = new Date(inv.availableUntil);
+        const beds = inv.roomCount * inv.roomType.maxPersons;
+
+        for (let d = 0; d < totalDays; d++) {
+          const currentDate = new Date(minDate);
+          currentDate.setDate(currentDate.getDate() + d);
+
+          if (currentDate >= start && currentDate <= end) {
+            dailyAvailableBeds[d] += beds;
+          }
+        }
+      });
+    });
+
+    // Calculate daily demand (events) - same logic as Analytics
+    const dailyDemandBeds: number[] = new Array(totalDays).fill(0);
+    events.forEach(event => {
+      const start = new Date(event.startDate);
+      const end = new Date(event.endDate);
+      const eventBeds = event.roomDemands?.reduce((sum, d) => sum + (d.roomCount * d.roomType.maxPersons), 0) || 0;
+
+      for (let d = 0; d < totalDays; d++) {
+        const currentDate = new Date(minDate);
+        currentDate.setDate(currentDate.getDate() + d);
+
+        if (currentDate >= start && currentDate <= end) {
+          dailyDemandBeds[d] += eventBeds;
+        }
+      }
+    });
+
+    // Calculate rooms from beds: Betten / 1.5 = Zimmer
+    const dailyAvailableRooms = dailyAvailableBeds.map(beds => Math.ceil(beds / 1.5));
+    const dailyDemandRooms = dailyDemandBeds.map(beds => Math.ceil(beds / 1.5));
+
+    // Take MAXIMUM of daily values (same as Analytics)
+    totalBedsAvailable = Math.max(...dailyAvailableBeds, 0);
+    totalBedsDemand = Math.max(...dailyDemandBeds, 0);
+    totalRoomsAvailable = Math.max(...dailyAvailableRooms, 0);
+    totalRoomsDemand = Math.max(...dailyDemandRooms, 0);
+  }
 
   // Total assigned rooms
   const totalRoomsAssigned = assignments.length;
