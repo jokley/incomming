@@ -4,7 +4,7 @@
 
 Event-Management-Software für die Organisation der Freestyle-Weltmeisterschaft mit Athletenverwaltung, Hotelzuweisungen, CSV-Import und professionellen Analysen.
 
-⚠️ **WICHTIG**: Dieses System wurde komplett neu strukturiert basierend auf der Tabellenstruktur aus `hotel-zimmer-preise.csv`. Siehe `SETUP.md` für Details.
+⚠️ **WICHTIG**: Dieses System wurde komplett neu strukturiert basierend auf der Tabellenstruktur aus `hotel-zimmer-preise.csv`. Siehe `docs/SETUP.md` für Details.
 
 ## 🏗️ Architektur
 
@@ -34,11 +34,11 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # oder
-venv\Scripts\activate     # Windows
+python -m venv venv    # Windows
 
 pip install -r requirements.txt
 python seed_data.py       # Datenbank initialisieren
-python app.py
+python seed_data.py 
 ```
 
 #### Frontend
@@ -183,7 +183,7 @@ Dateien:
 - `.env.production` - Production Build
 - `.env` - Fallback (Production)
 
-Siehe `DEPLOYMENT.md` für Details zum Production-Setup.
+Siehe `docs/DEPLOYMENT.md` für Details zum Production-Setup.
 
 ## 💡 Zimmerverwaltung - 50/50 Regel
 
@@ -229,7 +229,7 @@ Detaillierte Auswertungen unter `/analytics`:
 - Betten-Kapazität Berechnungen
 - Status-Übersicht (ausreichend/fehlend)
 
-Siehe `SETUP.md` für vollständige Dokumentation!
+Siehe `docs/SETUP.md` für vollständige Dokumentation!
 
 ## 📝 Lizenz
 
