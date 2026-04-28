@@ -43,45 +43,54 @@ export function Dashboard() {
     }
   };
 
-  // Calculate total room capacity (available)
-  const totalRoomsAvailable = hotels.reduce((sum, hotel) => {
-    if (!hotel.roomInventories) return sum;
-    return sum + hotel.roomInventories.reduce((hotelSum, inv) => hotelSum + inv.roomCount, 0);
-  }, 0);
-
-  // Calculate total bed capacity
-  const totalBeds = hotels.reduce((sum, hotel) => {
+  // Calculate total bed capacity (AVAILABILITY - IST)
+  const totalBedsAvailable = hotels.reduce((sum, hotel) => {
     if (!hotel.roomInventories) return sum;
     return sum + hotel.roomInventories.reduce((hotelSum, inv) => {
       return hotelSum + (inv.roomCount * inv.roomType.maxPersons);
     }, 0);
   }, 0);
 
-  // Calculate total event demand (room demand across all events)
-  const totalRoomsDemand = events.reduce((sum, event) => {
+  // Calculate total bed demand (DEMAND - SOLL)
+  const totalBedsDemand = events.reduce((sum, event) => {
     if (!event.roomDemands) return sum;
-    return sum + event.roomDemands.reduce((eventSum, demand) => eventSum + demand.roomCount, 0);
+    return sum + event.roomDemands.reduce((eventSum, demand) => {
+      return eventSum + (demand.roomCount * demand.roomType.maxPersons);
+    }, 0);
   }, 0);
+
+  // Convert beds to rooms using the 1.5 factor (same as Analytics)
+  const totalRoomsAvailable = Math.ceil(totalBedsAvailable / 1.5);
+  const totalRoomsDemand = Math.ceil(totalBedsDemand / 1.5);
 
   // Total assigned rooms
   const totalRoomsAssigned = assignments.length;
 
-  // Calculate remaining capacity
-  const totalRoomsRemaining = totalRoomsAvailable - totalRoomsAssigned;
-  const roomUtilization = totalRoomsAvailable > 0
+  // Calculate differences
+  const bedsDifference = totalBedsAvailable - totalBedsDemand;
+  const roomsDifference = totalRoomsAvailable - totalRoomsDemand;
+
+  // Calculate utilization based on demand vs available
+  const demandUtilization = totalRoomsAvailable > 0
+    ? ((totalRoomsDemand / totalRoomsAvailable) * 100).toFixed(1)
+    : 0;
+  const assignmentUtilization = totalRoomsAvailable > 0
     ? ((totalRoomsAssigned / totalRoomsAvailable) * 100).toFixed(1)
     : 0;
 
   const stats = {
     totalAthletes: athletes.length,
     totalHotels: hotels.length,
+    totalBedsAvailable,
+    totalBedsDemand,
     totalRoomsAvailable,
-    totalBeds,
+    totalRoomsDemand,
     totalEvents: events.length,
     totalRoomsAssigned,
-    totalRoomsDemand,
-    totalRoomsRemaining,
-    roomUtilization,
+    bedsDifference,
+    roomsDifference,
+    demandUtilization,
+    assignmentUtilization,
   };
 
   // Nation data - safe with nullish coalescing
@@ -131,113 +140,166 @@ export function Dashboard() {
       <h2 className="text-2xl font-bold text-gray-900">Dashboard Übersicht</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Athleten & Staff</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalAthletes}</p>
+              <p className="text-sm text-blue-100">Athleten & Staff</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalAthletes}</p>
             </div>
-            <Users className="w-12 h-12 text-blue-500" />
+            <Users className="w-14 h-14 text-blue-200 opacity-80" />
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Events</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalEvents}</p>
+              <p className="text-sm text-indigo-100">Events</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalEvents}</p>
             </div>
-            <Calendar className="w-12 h-12 text-indigo-500" />
+            <Calendar className="w-14 h-14 text-indigo-200 opacity-80" />
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Hotels</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalHotels}</p>
+              <p className="text-sm text-orange-100">Hotels</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalHotels}</p>
             </div>
-            <Hotel className="w-12 h-12 text-orange-500" />
+            <Hotel className="w-14 h-14 text-orange-200 opacity-80" />
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Betten Gesamt</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalBeds}</p>
+              <p className="text-sm text-teal-100">Zuweisungen</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalRoomsAssigned}</p>
             </div>
-            <Trophy className="w-12 h-12 text-green-500" />
+            <TrendingUp className="w-14 h-14 text-teal-200 opacity-80" />
           </div>
         </div>
       </div>
 
-      {/* Zimmerverfügbarkeit Übersicht */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-6">Zimmerverfügbarkeit Gesamt</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Zimmer Verfügbar */}
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-3">
-              <Bed className="w-8 h-8 text-blue-600" />
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsAvailable}</div>
-            <div className="text-sm text-gray-600 mb-3">Zimmer Verfügbar</div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full"
-                style={{ width: '100%' }}
-              ></div>
-            </div>
-          </div>
-
-          {/* Zimmer Bedarf */}
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-orange-100 mb-3">
-              <AlertCircle className="w-8 h-8 text-orange-600" />
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsDemand}</div>
-            <div className="text-sm text-gray-600 mb-3">Zimmer Bedarf</div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-orange-600 h-2 rounded-full"
-                style={{
-                  width: `${stats.totalRoomsAvailable > 0 ? Math.min((stats.totalRoomsDemand / stats.totalRoomsAvailable) * 100, 100) : 0}%`
-                }}
-              ></div>
-            </div>
-          </div>
-
-          {/* Zimmer Zugewiesen */}
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-3">
-              <TrendingUp className="w-8 h-8 text-green-600" />
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsAssigned}</div>
-            <div className="text-sm text-gray-600 mb-3">Zimmer Zugewiesen</div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-green-600 h-2 rounded-full"
-                style={{
-                  width: `${stats.totalRoomsAvailable > 0 ? (stats.totalRoomsAssigned / stats.totalRoomsAvailable) * 100 : 0}%`
-                }}
-              ></div>
-            </div>
-          </div>
+      {/* Zimmerverfügbarkeit Übersicht - SOLL/IST */}
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-gray-800 to-gray-900 px-6 py-4">
+          <h3 className="text-xl font-bold text-white">Soll/Ist Analyse - Verfügbarkeit vs. Bedarf</h3>
+          <p className="text-sm text-gray-300 mt-1">Berechnung: Zimmer = Betten ÷ 1,5</p>
         </div>
 
-        {/* Auslastung Summary */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-sm text-gray-600">Zimmer Auslastung:</span>
-              <span className="ml-2 text-lg font-semibold text-gray-900">{stats.roomUtilization}%</span>
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* IST - Verfügbarkeit */}
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border-2 border-green-300">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-bold text-green-800">IST - Verfügbarkeit</h4>
+                <div className="w-12 h-12 bg-green-200 rounded-full flex items-center justify-center">
+                  <Bed className="w-6 h-6 text-green-700" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="bg-white rounded-lg p-3 shadow">
+                  <div className="text-xs text-gray-600 mb-1">Betten verfügbar</div>
+                  <div className="text-3xl font-bold text-green-700">{stats.totalBedsAvailable}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 shadow">
+                  <div className="text-xs text-gray-600 mb-1">Zimmer verfügbar (÷1,5)</div>
+                  <div className="text-3xl font-bold text-green-700">{stats.totalRoomsAvailable}</div>
+                </div>
+              </div>
             </div>
+
+            {/* SOLL - Bedarf */}
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border-2 border-blue-300">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-bold text-blue-800">SOLL - Bedarf</h4>
+                <div className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6 text-blue-700" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="bg-white rounded-lg p-3 shadow">
+                  <div className="text-xs text-gray-600 mb-1">Betten benötigt</div>
+                  <div className="text-3xl font-bold text-blue-700">{stats.totalBedsDemand}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 shadow">
+                  <div className="text-xs text-gray-600 mb-1">Zimmer benötigt (÷1,5)</div>
+                  <div className="text-3xl font-bold text-blue-700">{stats.totalRoomsDemand}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Differenz & Status */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className={`rounded-xl p-6 border-2 ${
+              stats.bedsDifference >= 0
+                ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-300'
+                : 'bg-gradient-to-br from-red-50 to-red-100 border-red-300'
+            }`}>
+              <div className="text-xs font-medium text-gray-600 mb-2">Δ Betten</div>
+              <div className={`text-4xl font-bold ${stats.bedsDifference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                {stats.bedsDifference >= 0 ? '+' : ''}{stats.bedsDifference}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                {stats.bedsDifference >= 0 ? 'Überkapazität' : 'Unterkapazität'}
+              </div>
+            </div>
+
+            <div className={`rounded-xl p-6 border-2 ${
+              stats.roomsDifference >= 0
+                ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-300'
+                : 'bg-gradient-to-br from-red-50 to-red-100 border-red-300'
+            }`}>
+              <div className="text-xs font-medium text-gray-600 mb-2">Δ Zimmer</div>
+              <div className={`text-4xl font-bold ${stats.roomsDifference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                {stats.roomsDifference >= 0 ? '+' : ''}{stats.roomsDifference}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                {stats.roomsDifference >= 0 ? 'Überkapazität' : 'Unterkapazität'}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border-2 border-purple-300">
+              <div className="text-xs font-medium text-gray-600 mb-2">Zimmer Zugewiesen</div>
+              <div className="text-4xl font-bold text-purple-700">{stats.totalRoomsAssigned}</div>
+              <div className="text-xs text-gray-600 mt-1">{stats.assignmentUtilization}% Auslastung</div>
+            </div>
+          </div>
+
+          {/* Progress Bars */}
+          <div className="space-y-4">
             <div>
-              <span className="text-sm text-gray-600">Noch verfügbar:</span>
-              <span className={`ml-2 text-lg font-semibold ${stats.totalRoomsRemaining > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {stats.totalRoomsRemaining} Zimmer
-              </span>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">Bedarf vs. Verfügbarkeit</span>
+                <span className="text-sm font-bold text-gray-900">{stats.demandUtilization}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                <div
+                  className={`h-4 rounded-full transition-all ${
+                    Number(stats.demandUtilization) > 100
+                      ? 'bg-gradient-to-r from-red-500 to-red-600'
+                      : Number(stats.demandUtilization) > 85
+                      ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                      : 'bg-gradient-to-r from-green-500 to-green-600'
+                  }`}
+                  style={{ width: `${Math.min(Number(stats.demandUtilization), 100)}%` }}
+                ></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">Zuweisungen vs. Verfügbarkeit</span>
+                <span className="text-sm font-bold text-gray-900">{stats.assignmentUtilization}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                <div
+                  className="h-4 rounded-full transition-all bg-gradient-to-r from-purple-500 to-purple-600"
+                  style={{ width: `${Math.min(Number(stats.assignmentUtilization), 100)}%` }}
+                ></div>
+              </div>
             </div>
           </div>
         </div>
