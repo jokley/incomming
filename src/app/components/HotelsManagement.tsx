@@ -529,46 +529,56 @@ export function HotelsManagement() {
                   </div>
 
                   {/* Hotels and their inventories */}
-                  {hotelGroups.map((hotel) => (
-                    <div key={hotel.id} className="mb-4">
-                      <div className="flex items-center mb-1">
-                        <div className="w-64 flex-shrink-0">
-                          <p className="text-sm font-semibold text-gray-900">{hotel.name}</p>
-                          <p className="text-xs text-gray-500">{hotel.location}, {hotel.region}</p>
-                        </div>
-                      </div>
-                      {hotel.roomInventories?.map((inv) => {
-                        const start = new Date(inv.availableFrom);
-                        const end = new Date(inv.availableUntil);
-                        const startOffset = Math.floor((start.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-                        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                        const totalBeds = inv.roomCount * inv.roomType.maxPersons;
+                  {hotelGroups.map((hotel) => {
+                    const isSelectedHotel = selectedHotel?.id === hotel.id;
 
-                        return (
-                          <div key={inv.id} className="flex mb-1 items-center">
-                            <div className="w-64 flex-shrink-0 pr-4 pl-4">
-                              <p className="text-xs text-gray-700 truncate">{inv.roomType.name}</p>
-                              <p className="text-xs text-gray-500">
-                                {inv.roomCount} Zimmer • {totalBeds} Betten
-                              </p>
-                            </div>
-                            <div className="flex-1 relative h-8">
-                              <div
-                                className="absolute h-6 bg-green-500 rounded flex items-center justify-center text-white text-xs font-medium hover:bg-green-600 transition-colors cursor-pointer"
-                                style={{
-                                  left: `${(startOffset / totalDays) * 100}%`,
-                                  width: `${(duration / totalDays) * 100}%`,
-                                }}
-                                onClick={() => setSelectedHotel(hotel)}
-                              >
-                                {duration}d
+                    return (
+                      <div key={hotel.id} className="mb-4">
+                        <div className="flex items-center mb-1">
+                          <div className="w-64 flex-shrink-0">
+                            <p className={`text-sm font-semibold ${isSelectedHotel ? 'text-green-600' : 'text-gray-900'}`}>
+                              {hotel.name}
+                            </p>
+                            <p className="text-xs text-gray-500">{hotel.location}, {hotel.region}</p>
+                          </div>
+                        </div>
+                        {hotel.roomInventories?.map((inv) => {
+                          const start = new Date(inv.availableFrom);
+                          const end = new Date(inv.availableUntil);
+                          const startOffset = Math.floor((start.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                          const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                          const totalBeds = inv.roomCount * inv.roomType.maxPersons;
+
+                          return (
+                            <div key={inv.id} className="flex mb-1 items-center">
+                              <div className="w-64 flex-shrink-0 pr-4 pl-4">
+                                <p className="text-xs text-gray-700 truncate">{inv.roomType.name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {inv.roomCount} Zimmer • {totalBeds} Betten
+                                </p>
+                              </div>
+                              <div className="flex-1 relative h-8">
+                                <div
+                                  className={`absolute h-6 rounded flex items-center justify-center text-white text-xs font-medium transition-all cursor-pointer ${
+                                    isSelectedHotel
+                                      ? 'bg-green-700 ring-4 ring-green-300 shadow-lg'
+                                      : 'bg-green-500 hover:bg-green-600'
+                                  }`}
+                                  style={{
+                                    left: `${(startOffset / totalDays) * 100}%`,
+                                    width: `${(duration / totalDays) * 100}%`,
+                                  }}
+                                  onClick={() => setSelectedHotel(hotel)}
+                                >
+                                  {duration}d
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
 
                   {/* Daily Summary */}
                   <div className="mt-6 pt-4 border-t-2 border-gray-300">
