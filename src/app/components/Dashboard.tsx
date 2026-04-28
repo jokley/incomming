@@ -43,8 +43,8 @@ export function Dashboard() {
     }
   };
 
-  // Calculate total room capacity
-  const totalRooms = hotels.reduce((sum, hotel) => {
+  // Calculate total room capacity (available)
+  const totalRoomsAvailable = hotels.reduce((sum, hotel) => {
     if (!hotel.roomInventories) return sum;
     return sum + hotel.roomInventories.reduce((hotelSum, inv) => hotelSum + inv.roomCount, 0);
   }, 0);
@@ -57,20 +57,31 @@ export function Dashboard() {
     }, 0);
   }, 0);
 
-  // Calculate total event demand
-  const totalEventDemand = events.reduce((sum, event) => {
+  // Calculate total event demand (room demand across all events)
+  const totalRoomsDemand = events.reduce((sum, event) => {
     if (!event.roomDemands) return sum;
     return sum + event.roomDemands.reduce((eventSum, demand) => eventSum + demand.roomCount, 0);
   }, 0);
 
+  // Total assigned rooms
+  const totalRoomsAssigned = assignments.length;
+
+  // Calculate remaining capacity
+  const totalRoomsRemaining = totalRoomsAvailable - totalRoomsAssigned;
+  const roomUtilization = totalRoomsAvailable > 0
+    ? ((totalRoomsAssigned / totalRoomsAvailable) * 100).toFixed(1)
+    : 0;
+
   const stats = {
     totalAthletes: athletes.length,
     totalHotels: hotels.length,
-    totalRooms,
+    totalRoomsAvailable,
     totalBeds,
     totalEvents: events.length,
-    totalAssignments: assignments.length,
-    totalEventDemand,
+    totalRoomsAssigned,
+    totalRoomsDemand,
+    totalRoomsRemaining,
+    roomUtilization,
   };
 
   // Nation data - safe with nullish coalescing
@@ -93,35 +104,6 @@ export function Dashboard() {
     }, {} as Record<string, number>)
   ).map(([name, value]) => ({ name, value }))
    .sort((a, b) => b.value - a.value);
-
-  // Hotel capacity data
-  const hotelCapacity = hotels.map(hotel => {
-    const inventories = hotel.roomInventories || [];
-    const totalRooms = inventories.reduce((sum, inv) => sum + inv.roomCount, 0);
-    const totalBeds = inventories.reduce((sum, inv) => sum + (inv.roomCount * inv.roomType.maxPersons), 0);
-
-    return {
-      name: hotel.name,
-      Zimmer: totalRooms,
-      Betten: totalBeds,
-    };
-  }).filter(h => h.Zimmer > 0);
-
-  // Room type distribution
-  const roomTypeData = roomTypes.map(rt => {
-    const totalRooms = hotels.reduce((sum, hotel) => {
-      const inventories = hotel.roomInventories || [];
-      return sum + inventories
-        .filter(inv => inv.roomType.id === rt.id)
-        .reduce((invSum, inv) => invSum + inv.roomCount, 0);
-    }, 0);
-
-    return {
-      name: rt.name,
-      Zimmer: totalRooms,
-      Betten: totalRooms * rt.maxPersons,
-    };
-  }).filter(rt => rt.Zimmer > 0);
 
   // Event demand data
   const eventDemandData = events.map(event => {
@@ -182,91 +164,84 @@ export function Dashboard() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Zuweisungen</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalAssignments}</p>
-            </div>
-            <TrendingUp className="w-12 h-12 text-teal-500" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Zimmer Gesamt</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalRooms}</p>
-            </div>
-            <Bed className="w-12 h-12 text-purple-500" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
               <p className="text-sm text-gray-600">Betten Gesamt</p>
               <p className="text-3xl font-bold text-gray-900">{stats.totalBeds}</p>
             </div>
             <Trophy className="w-12 h-12 text-green-500" />
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Event Nachfrage</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalEventDemand}</p>
-            </div>
-            <AlertCircle className="w-12 h-12 text-red-500" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Zimmertypen</p>
-              <p className="text-3xl font-bold text-gray-900">{roomTypes.length}</p>
-            </div>
-            <Globe className="w-12 h-12 text-pink-500" />
-          </div>
-        </div>
       </div>
 
       {/* Zimmerverfügbarkeit Übersicht */}
-      {availability.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Zimmerverfügbarkeit</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {availability.map((item, idx) => {
-              const isShortage = item.difference < 0;
-              return (
-                <div
-                  key={idx}
-                  className={`p-4 rounded-lg border-2 ${
-                    isShortage ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'
-                  }`}
-                >
-                  <h4 className="font-semibold text-gray-900">{item.roomType.name}</h4>
-                  <div className="mt-2 space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Verfügbar:</span>
-                      <span className="font-medium">{item.available}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Nachfrage:</span>
-                      <span className="font-medium">{item.demand}</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t">
-                      <span className="text-gray-600">Differenz:</span>
-                      <span className={`font-bold ${isShortage ? 'text-red-600' : 'text-green-600'}`}>
-                        {item.difference > 0 ? '+' : ''}{item.difference}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-6">Zimmerverfügbarkeit Gesamt</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Zimmer Verfügbar */}
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-3">
+              <Bed className="w-8 h-8 text-blue-600" />
+            </div>
+            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsAvailable}</div>
+            <div className="text-sm text-gray-600 mb-3">Zimmer Verfügbar</div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full"
+                style={{ width: '100%' }}
+              ></div>
+            </div>
+          </div>
+
+          {/* Zimmer Bedarf */}
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-orange-100 mb-3">
+              <AlertCircle className="w-8 h-8 text-orange-600" />
+            </div>
+            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsDemand}</div>
+            <div className="text-sm text-gray-600 mb-3">Zimmer Bedarf</div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-orange-600 h-2 rounded-full"
+                style={{
+                  width: `${stats.totalRoomsAvailable > 0 ? Math.min((stats.totalRoomsDemand / stats.totalRoomsAvailable) * 100, 100) : 0}%`
+                }}
+              ></div>
+            </div>
+          </div>
+
+          {/* Zimmer Zugewiesen */}
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-3">
+              <TrendingUp className="w-8 h-8 text-green-600" />
+            </div>
+            <div className="text-4xl font-bold text-gray-900 mb-1">{stats.totalRoomsAssigned}</div>
+            <div className="text-sm text-gray-600 mb-3">Zimmer Zugewiesen</div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-green-600 h-2 rounded-full"
+                style={{
+                  width: `${stats.totalRoomsAvailable > 0 ? (stats.totalRoomsAssigned / stats.totalRoomsAvailable) * 100 : 0}%`
+                }}
+              ></div>
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Auslastung Summary */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm text-gray-600">Zimmer Auslastung:</span>
+              <span className="ml-2 text-lg font-semibold text-gray-900">{stats.roomUtilization}%</span>
+            </div>
+            <div>
+              <span className="text-sm text-gray-600">Noch verfügbar:</span>
+              <span className={`ml-2 text-lg font-semibold ${stats.totalRoomsRemaining > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {stats.totalRoomsRemaining} Zimmer
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Events Übersicht */}
       {events.length > 0 && (
@@ -367,100 +342,22 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Hotel-Kapazität</h3>
-          {hotelCapacity.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={hotelCapacity}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Zimmer" fill="#3b82f6" />
-                <Bar dataKey="Betten" fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-400">
-              Keine Hotels mit Inventories verfügbar
-            </div>
-          )}
-        </div>
-
+      {eventDemandData.length > 0 && (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Event Zimmernachfrage</h3>
-          {eventDemandData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={eventDemandData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Zimmer" fill="#8b5cf6" />
-                <Bar dataKey="Betten" fill="#ec4899" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-400">
-              Keine Event-Nachfrage verfügbar
-            </div>
-          )}
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={eventDemandData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="Zimmer" fill="#8b5cf6" name="Zimmer" />
+              <Bar dataKey="Betten" fill="#ec4899" name="Betten" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Zimmertyp-Verteilung</h3>
-        {roomTypeData.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Zimmertyp
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Anzahl Zimmer
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Anzahl Betten
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Max. Personen/Zimmer
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {roomTypeData.map((rt, idx) => {
-                  const roomType = roomTypes.find(r => r.name === rt.name);
-                  return (
-                    <tr key={idx} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {rt.name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {rt.Zimmer}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {rt.Betten}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {roomType?.maxPersons || '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="py-12 text-center text-gray-400">
-            Keine Zimmertypen verfügbar
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
