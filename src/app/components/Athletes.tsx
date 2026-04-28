@@ -279,7 +279,29 @@ export function Athletes() {
               filteredAthletes.map((athlete) => (
                 <tr key={athlete.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {athlete.firstname} {athlete.lastname}
+                    <div className="space-y-1">
+                      <div>{athlete.firstname} {athlete.lastname}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {athlete.missingFromLatestAthletesImport && (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] bg-red-100 text-red-700 border border-red-200">
+                            Nicht in letzter Athletenliste
+                          </span>
+                        )}
+                        {athlete.missingFromLatestRoomlistImport && (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] bg-orange-100 text-orange-700 border border-orange-200">
+                            Nicht in letzter Roomlist
+                          </span>
+                        )}
+                        {athlete.roomlistChangedAt && (
+                          <span
+                            title={athlete.roomlistChangeSummary || undefined}
+                            className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 text-blue-700 border border-blue-200"
+                          >
+                            Roomlist geändert
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {athlete.nationCode}

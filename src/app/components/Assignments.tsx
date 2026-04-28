@@ -47,12 +47,36 @@ export function Assignments() {
 
   // Find potential room partners for selected athlete
   const selectedAthleteData = athletes.find(a => a.id === selectedAthlete);
+  const normalizeName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[.,]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const matchesSharedWithName = (candidate: Athlete, sharedWithName: string) => {
+    const target = normalizeName(sharedWithName);
+    const first = normalizeName(candidate.firstname);
+    const last = normalizeName(candidate.lastname);
+    if (!target || !first || !last) return false;
+    return target.includes(first) && target.includes(last);
+  };
+
   const potentialPartners = selectedAthleteData
-    ? athletes.filter(a =>
-        a.id !== selectedAthlete &&
-        !assignedAthleteIds.has(a.id) &&
-        a.nationCode === selectedAthleteData.nationCode // Same nation
-      )
+    ? (() => {
+        const eligible = athletes.filter(
+          a => a.id !== selectedAthlete && !assignedAthleteIds.has(a.id)
+        );
+
+        const requested = selectedAthleteData.sharedWithName
+          ? eligible.filter(a => matchesSharedWithName(a, selectedAthleteData.sharedWithName!))
+          : [];
+
+        const sameNation = eligible.filter(a => a.nationCode === selectedAthleteData.nationCode);
+
+        const merged = [...requested, ...sameNation.filter(a => !requested.some(r => r.id === a.id))];
+        return merged;
+      })()
     : [];
 
   const handleAssignment = async () => {
@@ -217,6 +241,48 @@ export function Assignments() {
             Zuweisen
           </button>
         </div>
+
+        {selectedAthleteData && (
+          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="font-medium">
+                {selectedAthleteData.firstname} {selectedAthleteData.lastname}
+              </span>
+              <span className="text-gray-500">
+                {selectedAthleteData.nationCode}{selectedAthleteData.discipline ? ` • ${selectedAthleteData.discipline}` : ''}
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div>
+                <span className="text-gray-500">Anreise:</span>{' '}
+                {selectedAthleteData.arrivalDate ? new Date(selectedAthleteData.arrivalDate).toLocaleDateString('de-DE') : '-'}
+              </div>
+              <div>
+                <span className="text-gray-500">Abreise:</span>{' '}
+                {selectedAthleteData.departureDate ? new Date(selectedAthleteData.departureDate).toLocaleDateString('de-DE') : '-'}
+              </div>
+              <div>
+                <span className="text-gray-500">Präferenz:</span>{' '}
+                {selectedAthleteData.roomType || '-'}
+                {selectedAthleteData.sharedWithName ? ` (mit ${selectedAthleteData.sharedWithName})` : ''}
+              </div>
+            </div>
+            {(selectedAthleteData.missingFromLatestAthletesImport || selectedAthleteData.missingFromLatestRoomlistImport) && (
+              <div className="mt-2 text-xs">
+                {selectedAthleteData.missingFromLatestAthletesImport && (
+                  <span className="mr-2 px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+                    Nicht in letzter Athletenliste
+                  </span>
+                )}
+                {selectedAthleteData.missingFromLatestRoomlistImport && (
+                  <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                    Nicht in letzter Roomlist
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Assignments by Hotel */}
@@ -252,6 +318,11 @@ export function Assignments() {
                         </p>
                         <p className="text-xs text-gray-500">
                           {assignment.athlete.nationCode} • {assignment.athlete.discipline || 'N/A'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {assignment.athlete.arrivalDate ? new Date(assignment.athlete.arrivalDate).toLocaleDateString('de-DE') : '-'}
+                          {' '}→{' '}
+                          {assignment.athlete.departureDate ? new Date(assignment.athlete.departureDate).toLocaleDateString('de-DE') : '-'}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           <span className={`px-2 py-1 text-xs rounded-full ${

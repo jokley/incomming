@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment
+from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, ImportRun
 from datetime import datetime
 import os
 import csv
 import io
+from sqlalchemy import text
 
 app = Flask(__name__)
 CORS(app)
@@ -19,6 +20,26 @@ db.init_app(app)
 # Initialize database
 with app.app_context():
     db.create_all()
+
+    # Lightweight SQLite migration for added columns (no Alembic in this repo)
+    def ensure_athlete_columns():
+        cols = db.session.execute(text("PRAGMA table_info(athlete)")).fetchall()
+        existing = {c[1] for c in cols}  # (cid, name, type, notnull, dflt, pk)
+
+        needed = {
+            "athletes_last_seen_at": "DATETIME",
+            "roomlist_last_seen_at": "DATETIME",
+            "roomlist_changed_at": "DATETIME",
+            "roomlist_change_summary": "VARCHAR(500)",
+        }
+
+        for name, sql_type in needed.items():
+            if name not in existing:
+                db.session.execute(text(f"ALTER TABLE athlete ADD COLUMN {name} {sql_type}"))
+
+        db.session.commit()
+
+    ensure_athlete_columns()
 
 
 # ============================================================================
@@ -509,7 +530,42 @@ def delete_event_demand(event_id, demand_id):
 @app.route('/api/athletes', methods=['GET'])
 def get_athletes():
     athletes = Athlete.query.all()
-    return jsonify([a.to_dict() for a in athletes])
+
+    latest_athletes_run = ImportRun.query.filter_by(import_type='athletes').order_by(ImportRun.started_at.desc()).first()
+    latest_roomlist_run = ImportRun.query.filter_by(import_type='roomlist').order_by(ImportRun.started_at.desc()).first()
+
+    latest_athletes_at = latest_athletes_run.started_at if latest_athletes_run else None
+    latest_roomlist_at = latest_roomlist_run.started_at if latest_roomlist_run else None
+
+    result = []
+    for a in athletes:
+        data = a.to_dict()
+
+        if latest_athletes_at:
+            data['missingFromLatestAthletesImport'] = (
+                (a.athletes_last_seen_at is None) or (a.athletes_last_seen_at < latest_athletes_at)
+            )
+        else:
+            data['missingFromLatestAthletesImport'] = False
+
+        had_roomlist_data = (
+            a.roomlist_last_seen_at is not None
+            or a.arrival_date is not None
+            or a.departure_date is not None
+            or bool(a.room_type)
+            or bool(a.shared_with_name)
+        )
+
+        if latest_roomlist_at and had_roomlist_data:
+            data['missingFromLatestRoomlistImport'] = (
+                (a.roomlist_last_seen_at is None) or (a.roomlist_last_seen_at < latest_roomlist_at)
+            )
+        else:
+            data['missingFromLatestRoomlistImport'] = False
+
+        result.append(data)
+
+    return jsonify(result)
 
 
 @app.route('/api/athletes', methods=['POST'])

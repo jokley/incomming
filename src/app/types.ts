@@ -1,10 +1,18 @@
-export interface Athlete {
+export interface RoomType {
   id: string;
   name: string;
-  nation: string;
-  discipline: string;
-  hotelId?: string;
-  roomType?: 'single' | 'double';
+  maxPersons: number;
+}
+
+export interface HotelRoomInventory {
+  id: string;
+  hotelId: string;
+  roomType: RoomType;
+  availableFrom: string; // ISO date
+  availableUntil: string; // ISO date
+  roomCount: number;
+  hasHalfBoard?: boolean;
+  hasSR?: boolean;
 }
 
 export interface Hotel {
@@ -12,34 +20,73 @@ export interface Hotel {
   name: string;
   location?: string;
   region?: string;
-  singleRooms: number;
-  doubleRooms: number;
-  assignedSingle: number;
-  assignedDouble: number;
-  roomCategories?: RoomCategory[];
+  roomInventories?: HotelRoomInventory[];
 }
 
-export interface RoomCategory {
+export interface EventRoomDemand {
   id: string;
-  name: string;
-  count: number;
-  type: 'single' | 'double';
-  amenities: string[];
+  eventId: string;
+  roomType: RoomType;
+  roomCount: number;
 }
 
 export interface Event {
   id: string;
-  name: string;
   discipline: string;
-  startDate: string;
-  endDate: string;
-  targetQuota: number;
-  currentQuota: number;
+  startDate: string; // ISO date
+  endDate: string; // ISO date
+  roomDemands?: EventRoomDemand[];
 }
 
-export interface Assignment {
-  athleteId: string;
-  hotelId: string;
-  roomType: 'single' | 'double';
-  timestamp: Date;
+export interface Athlete {
+  id: string;
+  function?: string;
+  competitorId?: string;
+  accredId?: string;
+  fisCode?: string;
+  lastname: string;
+  firstname: string;
+  nationCode: string;
+  discipline?: string;
+  gender?: string;
+  forGender?: string;
+  phone?: string;
+  email?: string;
+
+  arrivalDate?: string | null; // ISO date
+  departureDate?: string | null; // ISO date
+
+  roomType?: string | null;
+  sharedWithName?: string | null;
+  lateCheckout?: boolean;
+  firstMeal?: string | null;
+  lastMeal?: string | null;
+  specialMeal?: string | null;
+
+  athletesLastSeenAt?: string | null; // ISO datetime
+  roomlistLastSeenAt?: string | null; // ISO datetime
+  roomlistChangedAt?: string | null; // ISO datetime
+  roomlistChangeSummary?: string | null;
+
+  missingFromLatestAthletesImport?: boolean;
+  missingFromLatestRoomlistImport?: boolean;
 }
+
+export interface RoomAssignment {
+  id: string;
+  athlete: Athlete;
+  hotel: { id: string; name: string };
+  roomType: RoomType;
+  roomNumber?: string | null;
+  checkInDate?: string | null; // ISO date
+  checkOutDate?: string | null; // ISO date
+  sharedWith?: Athlete | null;
+}
+
+export interface RoomAvailability {
+  roomType: RoomType;
+  available: number;
+  demand: number;
+  difference: number;
+}
+

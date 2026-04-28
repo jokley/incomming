@@ -3,6 +3,23 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
+class ImportRun(db.Model):
+    """Tracks the latest import timestamps for change detection"""
+    __tablename__ = 'import_run'
+
+    id = db.Column(db.Integer, primary_key=True)
+    import_type = db.Column(db.String(50), nullable=False)  # athletes | roomlist
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'importType': self.import_type,
+            'startedAt': self.started_at.isoformat() if self.started_at else None,
+            'finishedAt': self.finished_at.isoformat() if self.finished_at else None,
+        }
+
 class RoomType(db.Model):
     """Zimmertyp - definiert MaxPersonen pro Zimmertyp"""
     __tablename__ = 'room_type'
@@ -173,6 +190,13 @@ class Athlete(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Import / change tracking
+    athletes_last_seen_at = db.Column(db.DateTime)
+    roomlist_last_seen_at = db.Column(db.DateTime)
+
+    roomlist_changed_at = db.Column(db.DateTime)
+    roomlist_change_summary = db.Column(db.String(500))
+
     def to_dict(self):
         return {
             'id': str(self.id),
@@ -196,6 +220,11 @@ class Athlete(db.Model):
             'firstMeal': self.first_meal,
             'lastMeal': self.last_meal,
             'specialMeal': self.special_meal
+            ,
+            'athletesLastSeenAt': self.athletes_last_seen_at.isoformat() if self.athletes_last_seen_at else None,
+            'roomlistLastSeenAt': self.roomlist_last_seen_at.isoformat() if self.roomlist_last_seen_at else None,
+            'roomlistChangedAt': self.roomlist_changed_at.isoformat() if self.roomlist_changed_at else None,
+            'roomlistChangeSummary': self.roomlist_change_summary
         }
 
 
