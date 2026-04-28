@@ -473,16 +473,23 @@ export function EventsManagement() {
                     const startOffset = Math.floor((start.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
                     const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                     const totalBeds = calculateTotalBeds(event.roomDemands);
+                    const isSelected = selectedEvent?.id === event.id;
 
                     return (
                       <div key={event.id} className="flex mb-2 items-center">
                         <div className="w-48 flex-shrink-0 pr-4">
-                          <p className="text-sm font-medium text-gray-900 truncate">{event.discipline}</p>
+                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-blue-600' : 'text-gray-900'}`}>
+                            {event.discipline}
+                          </p>
                           <p className="text-xs text-gray-500">{totalBeds} Betten</p>
                         </div>
                         <div className="flex-1 relative h-10">
                           <div
-                            className="absolute h-8 bg-blue-500 rounded flex items-center justify-center text-white text-xs font-medium hover:bg-blue-600 transition-colors cursor-pointer"
+                            className={`absolute h-8 rounded flex items-center justify-center text-white text-xs font-medium transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-700 ring-4 ring-blue-300 shadow-lg'
+                                : 'bg-blue-500 hover:bg-blue-600'
+                            }`}
                             style={{
                               left: `${(startOffset / totalDays) * 100}%`,
                               width: `${(duration / totalDays) * 100}%`,
