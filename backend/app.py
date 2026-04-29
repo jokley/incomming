@@ -91,6 +91,20 @@ def _get_grouped_room_bookings_response():
     bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number, RoomBooking.id).all()
     return jsonify([b.to_dict() for b in bookings])
 
+
+CRITICAL_ROUTE_ALIASES = [
+    '/api/room-bookings/grouped',
+    '/api/room-bookings/grouped/',
+    '/api/room-assignments/grouped',
+    '/api/room-assignments/grouped/',
+    '/api/room-assignments',
+    '/api/room-assignments/',
+    '/api/fis/official-quotas',
+    '/api/fis/official-quotas/',
+    '/api/official-quotas',
+    '/api/official-quotas/',
+]
+
 # Initialize database
 with app.app_context():
     db.create_all()
@@ -703,21 +717,28 @@ def create_athlete():
 
 # Room Assignments
 @app.route('/api/room-bookings/grouped', methods=['GET'])
+@app.route('/api/room-bookings/grouped/', methods=['GET'])
 @app.route('/room-bookings/grouped', methods=['GET'])
+@app.route('/room-bookings/grouped/', methods=['GET'])
 @app.route('/api/room-assignments/grouped', methods=['GET'])
+@app.route('/api/room-assignments/grouped/', methods=['GET'])
 def get_grouped_room_bookings():
     return _get_grouped_room_bookings_response()
 
 
 @app.route('/api/room-assignments', methods=['GET'])
+@app.route('/api/room-assignments/', methods=['GET'])
 def get_room_assignments():
     # Backward-compatible alias. Canonical read endpoint is /api/room-bookings/grouped.
     return _get_grouped_room_bookings_response()
 
 
 @app.route('/api/fis/official-quotas', methods=['GET'])
+@app.route('/api/fis/official-quotas/', methods=['GET'])
 @app.route('/fis/official-quotas', methods=['GET'])
+@app.route('/fis/official-quotas/', methods=['GET'])
 @app.route('/api/official-quotas', methods=['GET'])
+@app.route('/api/official-quotas/', methods=['GET'])
 def get_official_quotas():
     nation_code = request.args.get('nationCode')
     discipline = request.args.get('discipline')
@@ -728,6 +749,23 @@ def get_official_quotas():
         gender=gender
     )
     return jsonify(rows)
+
+
+@app.route('/api/debug/routes', methods=['GET'])
+def get_debug_routes():
+    is_production = (
+        str(app.config.get('ENV', '')).lower() == 'production'
+        or os.getenv('FLASK_ENV', '').lower() == 'production'
+    )
+    if is_production:
+        return jsonify({'error': 'Not found'}), 404
+
+    available_routes = sorted(
+        [rule.rule for rule in app.url_map.iter_rules() if rule.rule in CRITICAL_ROUTE_ALIASES]
+    )
+    return jsonify({
+        'availableRoutes': available_routes
+    })
 
 
 @app.route('/api/room-assignments', methods=['POST'])
