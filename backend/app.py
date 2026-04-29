@@ -54,6 +54,8 @@ def _build_official_quota_usage_rows(nation_code=None, discipline=None, gender=N
     athletes = athletes.all()
     grouped = {}
     for athlete in athletes:
+        if (athlete.function or '').strip().lower() != 'athlete':
+            continue
         athlete_gender = (athlete.gender or athlete.for_gender or '').strip()
         if not athlete_gender:
             continue
@@ -71,17 +73,54 @@ def _build_official_quota_usage_rows(nation_code=None, discipline=None, gender=N
         key = (athlete.nation_code, athlete.discipline or '', normalized_gender)
         grouped[key] = grouped.get(key, 0) + 1
 
+    # Build live usage from room bookings: booked non-athletes and their single-room usage
+    usage_grouped = {}
+    single_used_grouped = {}
+
+    bookings = RoomBooking.query.all()
+    for booking in bookings:
+        for occupant in booking.occupants or []:
+            a = occupant.athlete
+            if not a:
+                continue
+            if nation_code and a.nation_code != nation_code:
+                continue
+            if discipline and (a.discipline or '') != discipline:
+                continue
+
+            if (a.function or '').strip().lower() == 'athlete':
+                continue
+
+            g = _normalize_gender(a)
+            if g == 'male':
+                normalized_gender = 'M'
+            elif g == 'female':
+                normalized_gender = 'F'
+            else:
+                normalized_gender = (a.gender or a.for_gender or '').strip() or ''
+            if not normalized_gender:
+                continue
+            if gender and normalized_gender.lower() != gender.lower():
+                continue
+
+            key = (a.nation_code, a.discipline or '', normalized_gender)
+            usage_grouped[key] = usage_grouped.get(key, 0) + 1
+            if booking.room_type and booking.room_type.max_persons == 1:
+                single_used_grouped[key] = single_used_grouped.get(key, 0) + 1
+
     for (n_code, disc, g), count in grouped.items():
         quota = compute_official_quota(count)
+        single_allowed = compute_single_room_entitlement(quota)
+        key = (n_code, disc, g)
         rows.append({
             'nationCode': n_code,
             'discipline': disc,
             'gender': g,
             'athletesEntered': count,
             'officialQuota': quota,
-            'singleRoomsAllowed': quota,
-            'assignedOfficials': 0,
-            'singleRoomsUsed': 0,
+            'singleRoomsAllowed': single_allowed,
+            'assignedOfficials': usage_grouped.get(key, 0),
+            'singleRoomsUsed': single_used_grouped.get(key, 0),
         })
 
     return sorted(rows, key=lambda row: (row['nationCode'], row['discipline'], row['gender']))
@@ -826,6 +865,38 @@ def create_room_assignment():
     if len(athlete_ids) > room_type.max_persons:
         return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
 
+    # Enforce same nation + same gender for double bookings
+    unique_athlete_ids = []
+    for athlete_id in athlete_ids:
+        int_id = int(athlete_id)
+        if int_id not in unique_athlete_ids:
+            unique_athlete_ids.append(int_id)
+
+    if len(unique_athlete_ids) == 2:
+        athletes = Athlete.query.filter(Athlete.id.in_(unique_athlete_ids)).all()
+        if len(athletes) != 2:
+            return _booking_error('ATHLETE_NOT_FOUND', 'One or more athletes not found')
+
+        a1, a2 = athletes[0], athletes[1]
+        if a1.nation_code != a2.nation_code:
+            return _booking_error('NATION_MISMATCH', 'Room share requires same nation', {
+                'athlete1': {'id': str(a1.id), 'nationCode': a1.nation_code},
+                'athlete2': {'id': str(a2.id), 'nationCode': a2.nation_code},
+            })
+
+        g1 = _normalize_gender(a1)
+        g2 = _normalize_gender(a2)
+        if not g1 or not g2:
+            return _booking_error('GENDER_UNKNOWN', 'Room share requires known gender for both occupants', {
+                'athlete1': {'id': str(a1.id), 'gender': a1.gender, 'forGender': a1.for_gender},
+                'athlete2': {'id': str(a2.id), 'gender': a2.gender, 'forGender': a2.for_gender},
+            })
+        if g1 != g2:
+            return _booking_error('GENDER_MISMATCH', 'Room share requires same gender', {
+                'athlete1': {'id': str(a1.id), 'gender': g1},
+                'athlete2': {'id': str(a2.id), 'gender': g2},
+            })
+
     booking = RoomBooking(
         hotel_id=int(data['hotelId']),
         room_type_id=int(data['roomTypeId']),
@@ -835,12 +906,6 @@ def create_room_assignment():
     )
     db.session.add(booking)
     db.session.flush()
-
-    unique_athlete_ids = []
-    for athlete_id in athlete_ids:
-        int_id = int(athlete_id)
-        if int_id not in unique_athlete_ids:
-            unique_athlete_ids.append(int_id)
 
     for athlete_id in unique_athlete_ids:
         db.session.add(RoomBookingOccupant(
@@ -879,6 +944,31 @@ def update_room_assignment(assignment_id):
         int_id = int(athlete_id)
         if int_id not in unique_athlete_ids:
             unique_athlete_ids.append(int_id)
+
+    if len(unique_athlete_ids) == 2:
+        athletes = Athlete.query.filter(Athlete.id.in_(unique_athlete_ids)).all()
+        if len(athletes) != 2:
+            return _booking_error('ATHLETE_NOT_FOUND', 'One or more athletes not found')
+
+        a1, a2 = athletes[0], athletes[1]
+        if a1.nation_code != a2.nation_code:
+            return _booking_error('NATION_MISMATCH', 'Room share requires same nation', {
+                'athlete1': {'id': str(a1.id), 'nationCode': a1.nation_code},
+                'athlete2': {'id': str(a2.id), 'nationCode': a2.nation_code},
+            })
+
+        g1 = _normalize_gender(a1)
+        g2 = _normalize_gender(a2)
+        if not g1 or not g2:
+            return _booking_error('GENDER_UNKNOWN', 'Room share requires known gender for both occupants', {
+                'athlete1': {'id': str(a1.id), 'gender': a1.gender, 'forGender': a1.for_gender},
+                'athlete2': {'id': str(a2.id), 'gender': a2.gender, 'forGender': a2.for_gender},
+            })
+        if g1 != g2:
+            return _booking_error('GENDER_MISMATCH', 'Room share requires same gender', {
+                'athlete1': {'id': str(a1.id), 'gender': g1},
+                'athlete2': {'id': str(a2.id), 'gender': g2},
+            })
 
     for athlete_id in unique_athlete_ids:
         db.session.add(RoomBookingOccupant(room_booking_id=booking.id, athlete_id=athlete_id))

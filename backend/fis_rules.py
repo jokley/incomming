@@ -21,16 +21,12 @@ def is_supported_discipline(discipline: str | None) -> bool:
 def compute_official_quota(athletes_entered: int) -> int:
     """Official quota for supported disciplines: officials = athletes + 2.
 
-    Explicit handling for low entries and cap behavior:
-    - 1..9: returns 3..11 (athletes + 2)
-    - 10+: capped at 11 officials
-    - <=0: 0
+    See FIS Snowboard/Freestyle/Freeski Championships rule excerpt:
+    total number of officials equals number of entered athletes plus 2 team officials.
     """
     if athletes_entered <= 0:
         return 0
-    if athletes_entered <= 9:
-        return athletes_entered + 2
-    return 11
+    return athletes_entered + 2
 
 
 def compute_single_room_entitlement(officials: int) -> int:
