@@ -97,6 +97,13 @@ export function Assignments() {
     }
 
     try {
+      if (requiresStrictPairing && selectedPartner) {
+        const partner = athletes.find(a => a.id === selectedPartner);
+        if (!selectedGender || !partner || normalizedGender(partner) !== selectedGender) {
+          setPartnerHint('Partner muss gender-kompatibel sein (gleiche bekannte Gender-Kategorie).');
+          return;
+        }
+      }
       const athlete = athletes.find(a => a.id === selectedAthlete);
       await api.createRoomAssignment({
         athleteId: selectedAthlete,
@@ -113,8 +120,11 @@ export function Assignments() {
       setSelectedRoomType('');
       setSelectedPartner('');
       setError(null);
+      setPartnerHint(null);
     } catch (err) {
-      setError('Fehler beim Zuweisen des Athleten');
+      const apiError = err as { message?: string; reasonCode?: string };
+      const reason = apiError.reasonCode ? ` (${apiError.reasonCode})` : '';
+      setError(apiError.message ? `${apiError.message}${reason}` : 'Fehler beim Zuweisen des Athleten');
       console.error(err);
     }
   };
@@ -166,6 +176,7 @@ export function Assignments() {
               onChange={(e) => {
                 setSelectedAthlete(e.target.value);
                 setSelectedPartner(''); // Reset partner when athlete changes
+                setPartnerHint(null);
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
@@ -235,12 +246,18 @@ export function Assignments() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
               <option value="">-- Kein Partner --</option>
-              {potentialPartners.map(athlete => (
+              {partnerOptions.map(athlete => (
                 <option key={athlete.id} value={athlete.id}>
                   {athlete.firstname} {athlete.lastname}
                 </option>
               ))}
             </select>
+            {excludedPartnerReasons.length > 0 && (
+              <p className="text-xs text-amber-700 mt-1">
+                Ausgeschlossen: {excludedPartnerReasons.slice(0, 2).join(' • ')}
+              </p>
+            )}
+            {partnerHint && <p className="text-xs text-red-700 mt-1">{partnerHint}</p>}
           </div>
 
           <button

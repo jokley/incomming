@@ -5,7 +5,7 @@ import {
   Event,
   EventRoomDemand,
   Athlete,
-  RoomAssignment,
+  RoomBooking,
   RoomAvailability
 } from '../types';
 import { OfficialQuotaUsage } from './fisRules';
@@ -34,7 +34,7 @@ let mockEvents = initialEvents.map(e => ({
   roomDemands: e.roomDemands ? [...e.roomDemands] : []
 }));
 let mockAthletes = [...initialAthletes];
-let mockRoomAssignments: RoomAssignment[] = [];
+let mockRoomBookings: RoomBooking[] = [];
 
 class ApiService {
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -46,7 +46,16 @@ class ApiService {
       ...options,
     });
 
+    const contentType = response.headers.get('content-type') || '';
+    const bodyText = await response.text();
+    const body = bodyText && contentType.includes('application/json')
+      ? JSON.parse(bodyText)
+      : bodyText;
+
     if (!response.ok) {
+      if (typeof body === 'object' && body && 'message' in body) {
+        throw body;
+      }
       throw new Error(`API Error: ${response.statusText}`);
     }
 
@@ -54,18 +63,10 @@ class ApiService {
       return undefined as T;
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    const bodyText = await response.text();
-
     if (!bodyText) {
       return undefined as T;
     }
-
-    if (contentType.includes('application/json')) {
-      return JSON.parse(bodyText) as T;
-    }
-
-    return bodyText as unknown as T;
+    return body as T;
   }
 
   // ============================================================================
@@ -393,50 +394,54 @@ class ApiService {
   // ROOM ASSIGNMENTS
   // ============================================================================
 
-  async getRoomAssignments(): Promise<RoomAssignment[]> {
+  async getRoomAssignments(): Promise<RoomBooking[]> {
     if (USE_MOCK_DATA) {
-      return Promise.resolve(mockRoomAssignments);
+      return Promise.resolve(mockRoomBookings);
     }
-    return this.request<RoomAssignment[]>('/room-assignments');
+    return this.request<RoomBooking[]>('/room-bookings/grouped');
   }
 
   async createRoomAssignment(data: {
-    athleteId: string;
+    athleteIds: string[];
     hotelId: string;
     roomTypeId: string;
+    roomNumber?: string;
     checkInDate?: string;
     checkOutDate?: string;
-    sharedWithAthleteId?: string;
-  }): Promise<RoomAssignment> {
+  }): Promise<RoomBooking> {
     if (USE_MOCK_DATA) {
-      const athlete = mockAthletes.find(a => a.id === data.athleteId);
-      if (!athlete) throw new Error('Athlete not found');
-
       const hotel = mockHotels.find(h => h.id === data.hotelId);
       if (!hotel) throw new Error('Hotel not found');
 
       const roomType = mockRoomTypes.find(rt => rt.id === data.roomTypeId);
       if (!roomType) throw new Error('Room type not found');
 
-      const sharedWith = data.sharedWithAthleteId
-        ? mockAthletes.find(a => a.id === data.sharedWithAthleteId)
-        : undefined;
-
-      const maxId = mockRoomAssignments.reduce((max, ra) => Math.max(max, parseInt(ra.id) || 0), 0);
-      const newAssignment: RoomAssignment = {
+      const maxId = mockRoomBookings.reduce((max, rb) => Math.max(max, parseInt(rb.id) || 0), 0);
+      const newBooking: RoomBooking = {
         id: String(maxId + 1),
-        athlete: athlete,
         hotel: { id: hotel.id, name: hotel.name },
         roomType: roomType,
+        roomNumber: data.roomNumber,
         checkInDate: data.checkInDate,
         checkOutDate: data.checkOutDate,
-        sharedWith: sharedWith,
+        occupants: data.athleteIds
+          .map((athleteId, idx) => {
+            const athlete = mockAthletes.find(a => a.id === athleteId);
+            if (!athlete) return null;
+            return {
+              id: `${maxId + 1}-${idx + 1}`,
+              roomBookingId: String(maxId + 1),
+              athlete,
+              role: null,
+            };
+          })
+          .filter(Boolean) as RoomBooking['occupants'],
       };
 
-      mockRoomAssignments.push(newAssignment);
-      return Promise.resolve(newAssignment);
+      mockRoomBookings.push(newBooking);
+      return Promise.resolve(newBooking);
     }
-    return this.request<RoomAssignment>('/room-assignments', {
+    return this.request<RoomBooking>('/room-assignments', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -444,9 +449,9 @@ class ApiService {
 
   async deleteRoomAssignment(id: string): Promise<void> {
     if (USE_MOCK_DATA) {
-      const index = mockRoomAssignments.findIndex(ra => ra.id === id);
+      const index = mockRoomBookings.findIndex(rb => rb.id === id);
       if (index !== -1) {
-        mockRoomAssignments.splice(index, 1);
+        mockRoomBookings.splice(index, 1);
       }
       return Promise.resolve();
     }
