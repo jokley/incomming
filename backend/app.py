@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, ImportRun
+from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, RoomBooking, RoomBookingOccupant, ImportRun
 from fis_rules import compute_official_quota, compute_single_room_entitlement, is_supported_discipline
 from datetime import datetime
 import os
@@ -118,6 +118,55 @@ def _validate_room_assignment(data, assignment_id=None):
         'check_out_date': check_out,
         'shared_with_athlete_id': shared_with_id
     }
+
+
+def _build_official_quota_usage_rows(nation_code=None, discipline=None, gender=None):
+    rows = []
+    athletes = Athlete.query
+    if nation_code:
+        athletes = athletes.filter(Athlete.nation_code == nation_code)
+    if discipline:
+        athletes = athletes.filter(Athlete.discipline == discipline)
+
+    athletes = athletes.all()
+    grouped = {}
+    for athlete in athletes:
+        athlete_gender = (athlete.gender or athlete.for_gender or '').strip()
+        if not athlete_gender:
+            continue
+        g = athlete_gender.lower()
+        if g.startswith('m'):
+            normalized_gender = 'M'
+        elif g.startswith('f'):
+            normalized_gender = 'F'
+        else:
+            normalized_gender = athlete_gender
+
+        if gender and normalized_gender.lower() != gender.lower():
+            continue
+
+        key = (athlete.nation_code, athlete.discipline or '', normalized_gender)
+        grouped[key] = grouped.get(key, 0) + 1
+
+    for (n_code, disc, g), count in grouped.items():
+        quota = compute_official_quota(count)
+        rows.append({
+            'nationCode': n_code,
+            'discipline': disc,
+            'gender': g,
+            'athletesEntered': count,
+            'officialQuota': quota,
+            'singleRoomsAllowed': quota,
+            'assignedOfficials': 0,
+            'singleRoomsUsed': 0,
+        })
+
+    return sorted(rows, key=lambda row: (row['nationCode'], row['discipline'], row['gender']))
+
+
+def _get_grouped_room_bookings_response():
+    bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number, RoomBooking.id).all()
+    return jsonify([b.to_dict() for b in bookings])
 
 # Initialize database
 with app.app_context():
@@ -730,25 +779,33 @@ def create_athlete():
 
 
 # Room Assignments
+@app.route('/api/room-bookings/grouped', methods=['GET'])
+def get_grouped_room_bookings():
+    return _get_grouped_room_bookings_response()
+
+
 @app.route('/api/room-assignments', methods=['GET'])
 def get_room_assignments():
-    bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number).all()
-    return jsonify([b.to_dict() for b in bookings])
+    # Backward-compatible alias. Canonical read endpoint is /api/room-bookings/grouped.
+    return _get_grouped_room_bookings_response()
+
+
+@app.route('/api/fis/official-quotas', methods=['GET'])
+def get_official_quotas():
+    nation_code = request.args.get('nationCode')
+    discipline = request.args.get('discipline')
+    gender = request.args.get('gender')
+    rows = _build_official_quota_usage_rows(
+        nation_code=nation_code,
+        discipline=discipline,
+        gender=gender
+    )
+    return jsonify(rows)
 
 
 @app.route('/api/room-assignments', methods=['POST'])
 def create_room_assignment():
     data = request.json
-    validated = _validate_room_assignment(data)
-    if isinstance(validated, tuple):
-        return validated
-    assignment = RoomAssignment(
-        athlete_id=validated['athlete_id'],
-        hotel_id=validated['hotel_id'],
-        room_type_id=validated['room_type_id'],
-        check_in_date=validated['check_in_date'],
-        check_out_date=validated['check_out_date'],
-        shared_with_athlete_id=validated['shared_with_athlete_id']
     athlete_ids = data.get('athleteIds', [])
     if not isinstance(athlete_ids, list) or len(athlete_ids) < 1 or len(athlete_ids) > 2:
         return jsonify({'error': 'athleteIds must include 1 or 2 athlete IDs'}), 400
@@ -772,9 +829,6 @@ def create_room_assignment():
         int_id = int(athlete_id)
         if int_id not in unique_athlete_ids:
             unique_athlete_ids.append(int_id)
-
-    if len(unique_athlete_ids) > room_type.max_persons:
-        return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
 
     for athlete_id in unique_athlete_ids:
         db.session.add(RoomBookingOccupant(
