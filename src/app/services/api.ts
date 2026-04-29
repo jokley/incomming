@@ -45,7 +45,16 @@ class ApiService {
       ...options,
     });
 
+    const contentType = response.headers.get('content-type') || '';
+    const bodyText = await response.text();
+    const body = bodyText && contentType.includes('application/json')
+      ? JSON.parse(bodyText)
+      : bodyText;
+
     if (!response.ok) {
+      if (typeof body === 'object' && body && 'message' in body) {
+        throw body;
+      }
       throw new Error(`API Error: ${response.statusText}`);
     }
 
@@ -53,18 +62,10 @@ class ApiService {
       return undefined as T;
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    const bodyText = await response.text();
-
     if (!bodyText) {
       return undefined as T;
     }
-
-    if (contentType.includes('application/json')) {
-      return JSON.parse(bodyText) as T;
-    }
-
-    return bodyText as unknown as T;
+    return body as T;
   }
 
   // ============================================================================
