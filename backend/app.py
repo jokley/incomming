@@ -17,6 +17,107 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
+
+def _normalize_gender(athlete):
+    raw = (athlete.gender or athlete.for_gender or '').strip().lower()
+    if raw in {'m', 'male', 'man', 'men', 'herr', 'herren'}:
+        return 'male'
+    if raw in {'f', 'female', 'woman', 'women', 'dame', 'damen'}:
+        return 'female'
+    return None
+
+
+def _dates_overlap(start_a, end_a, start_b, end_b):
+    if not start_a or not end_a or not start_b or not end_b:
+        return False
+    return start_a <= end_b and start_b <= end_a
+
+
+def _booking_error(reason_code, message, details=None):
+    return jsonify({
+        'error': 'VALIDATION_ERROR',
+        'reasonCode': reason_code,
+        'message': message,
+        'details': details or {}
+    }), 400
+
+
+def _validate_room_assignment(data, assignment_id=None):
+    athlete_id = int(data['athleteId'])
+    hotel_id = int(data['hotelId'])
+    room_type_id = int(data['roomTypeId'])
+    shared_with_id = int(data['sharedWithAthleteId']) if data.get('sharedWithAthleteId') else None
+    check_in = datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None
+    check_out = datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+
+    athlete = Athlete.query.get(athlete_id)
+    room_type = RoomType.query.get(room_type_id)
+    hotel = Hotel.query.get(hotel_id)
+    if not athlete:
+        return _booking_error('ATHLETE_NOT_FOUND', 'Selected athlete does not exist.')
+    if not room_type:
+        return _booking_error('ROOM_TYPE_NOT_FOUND', 'Selected room type does not exist.')
+    if not hotel:
+        return _booking_error('HOTEL_NOT_FOUND', 'Selected hotel does not exist.')
+
+    partner = None
+    if shared_with_id:
+        partner = Athlete.query.get(shared_with_id)
+        if not partner:
+            return _booking_error('PARTNER_NOT_FOUND', 'Selected partner does not exist.')
+
+    strict_same_gender = room_type.max_persons == 2 and partner is not None
+    if strict_same_gender:
+        athlete_gender = _normalize_gender(athlete)
+        partner_gender = _normalize_gender(partner)
+        if athlete_gender is None or partner_gender is None:
+            return _booking_error(
+                'STRICT_GENDER_UNKNOWN',
+                'Mixed or unknown gender pairing is not allowed for strict same-gender occupancy.',
+                {'athleteId': str(athlete.id), 'partnerId': str(partner.id)}
+            )
+        if athlete_gender != partner_gender:
+            return _booking_error(
+                'STRICT_GENDER_MISMATCH',
+                'Mixed or unknown gender pairing is not allowed for strict same-gender occupancy.',
+                {'athleteGender': athlete_gender, 'partnerGender': partner_gender}
+            )
+
+    athlete_ids = [athlete_id] + ([shared_with_id] if shared_with_id else [])
+    overlap_query = RoomAssignment.query.filter(
+        RoomAssignment.athlete_id.in_(athlete_ids) |
+        RoomAssignment.shared_with_athlete_id.in_(athlete_ids)
+    )
+    if assignment_id:
+        overlap_query = overlap_query.filter(RoomAssignment.id != assignment_id)
+
+    for existing in overlap_query.all():
+        existing_ids = {existing.athlete_id, existing.shared_with_athlete_id}
+        for current_athlete_id in athlete_ids:
+            if current_athlete_id in existing_ids and _dates_overlap(
+                check_in,
+                check_out,
+                existing.check_in_date,
+                existing.check_out_date
+            ):
+                return _booking_error(
+                    'ATHLETE_DATE_OVERLAP',
+                    'Athlete already has an overlapping booking in this date range.',
+                    {
+                        'athleteId': str(current_athlete_id),
+                        'existingAssignmentId': str(existing.id)
+                    }
+                )
+
+    return {
+        'athlete_id': athlete_id,
+        'hotel_id': hotel_id,
+        'room_type_id': room_type_id,
+        'check_in_date': check_in,
+        'check_out_date': check_out,
+        'shared_with_athlete_id': shared_with_id
+    }
+
 # Initialize database
 with app.app_context():
     db.create_all()
@@ -592,17 +693,37 @@ def get_room_assignments():
 @app.route('/api/room-assignments', methods=['POST'])
 def create_room_assignment():
     data = request.json
+    validated = _validate_room_assignment(data)
+    if isinstance(validated, tuple):
+        return validated
     assignment = RoomAssignment(
-        athlete_id=int(data['athleteId']),
-        hotel_id=int(data['hotelId']),
-        room_type_id=int(data['roomTypeId']),
-        check_in_date=datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None,
-        check_out_date=datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None,
-        shared_with_athlete_id=int(data['sharedWithAthleteId']) if data.get('sharedWithAthleteId') else None
+        athlete_id=validated['athlete_id'],
+        hotel_id=validated['hotel_id'],
+        room_type_id=validated['room_type_id'],
+        check_in_date=validated['check_in_date'],
+        check_out_date=validated['check_out_date'],
+        shared_with_athlete_id=validated['shared_with_athlete_id']
     )
     db.session.add(assignment)
     db.session.commit()
     return jsonify(assignment.to_dict()), 201
+
+
+@app.route('/api/room-assignments/<int:assignment_id>', methods=['PUT'])
+def update_room_assignment(assignment_id):
+    assignment = RoomAssignment.query.get_or_404(assignment_id)
+    data = request.json
+    validated = _validate_room_assignment(data, assignment_id=assignment_id)
+    if isinstance(validated, tuple):
+        return validated
+    assignment.athlete_id = validated['athlete_id']
+    assignment.hotel_id = validated['hotel_id']
+    assignment.room_type_id = validated['room_type_id']
+    assignment.check_in_date = validated['check_in_date']
+    assignment.check_out_date = validated['check_out_date']
+    assignment.shared_with_athlete_id = validated['shared_with_athlete_id']
+    db.session.commit()
+    return jsonify(assignment.to_dict())
 
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['DELETE'])
