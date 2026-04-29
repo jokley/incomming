@@ -8,6 +8,7 @@ import {
   RoomAssignment,
   RoomAvailability
 } from '../types';
+import { OfficialQuotaUsage } from './fisRules';
 
 import {
   mockRoomTypes as initialRoomTypes,
@@ -565,6 +566,19 @@ class ApiService {
     return response.json();
   }
 
+  // FIS official quotas
+  async getOfficialQuotaUsage(params?: { nationCode?: string; discipline?: string; gender?: string; }): Promise<OfficialQuotaUsage[]> {
+    if (USE_MOCK_DATA) {
+      return Promise.resolve([]);
+    }
+    const query = new URLSearchParams();
+    if (params?.nationCode) query.set('nationCode', params.nationCode);
+    if (params?.discipline) query.set('discipline', params.discipline);
+    if (params?.gender) query.set('gender', params.gender);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request<OfficialQuotaUsage[]>(`/fis/official-quotas${suffix}`);
+  }
+
   // ============================================================================
   // LEGACY / BACKWARDS COMPATIBILITY
   // ============================================================================
@@ -626,3 +640,5 @@ class ApiService {
 }
 
 export const api = new ApiService();
+
+

@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, ImportRun
+from fis_rules import compute_official_quota, compute_single_room_entitlement, is_supported_discipline
 from datetime import datetime
 import os
 import csv
 import io
-from sqlalchemy import text
+from sqlalchemy import text, func
 
 app = Flask(__name__)
 CORS(app)
@@ -613,6 +614,84 @@ def delete_room_assignment(assignment_id):
     return '', 204
 
 
+
+
+@app.route('/api/fis/official-quotas', methods=['GET'])
+def get_fis_official_quotas():
+    nation = request.args.get('nationCode')
+    discipline = request.args.get('discipline')
+    gender = request.args.get('gender')
+
+    athletes_query = db.session.query(
+        Athlete.nation_code.label('nation_code'),
+        Athlete.discipline.label('discipline'),
+        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U').label('gender'),
+        func.count(Athlete.id).label('athletes_entered')
+    )
+
+    if nation:
+        athletes_query = athletes_query.filter(Athlete.nation_code == nation)
+    if discipline:
+        athletes_query = athletes_query.filter(Athlete.discipline == discipline)
+    if gender:
+        athletes_query = athletes_query.filter(func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U') == gender)
+
+    athletes_rows = athletes_query.group_by(
+        Athlete.nation_code,
+        Athlete.discipline,
+        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U')
+    ).all()
+
+    assigned_rows = db.session.query(
+        Athlete.nation_code.label('nation_code'),
+        Athlete.discipline.label('discipline'),
+        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U').label('gender'),
+        func.count(RoomAssignment.id).label('assigned_officials'),
+        func.sum(func.case((RoomType.max_persons == 1, 1), else_=0)).label('single_rooms_used')
+    ).join(RoomAssignment, RoomAssignment.athlete_id == Athlete.id)     .join(RoomType, RoomType.id == RoomAssignment.room_type_id)
+
+    if nation:
+        assigned_rows = assigned_rows.filter(Athlete.nation_code == nation)
+    if discipline:
+        assigned_rows = assigned_rows.filter(Athlete.discipline == discipline)
+    if gender:
+        assigned_rows = assigned_rows.filter(func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U') == gender)
+
+    assigned_rows = assigned_rows.group_by(
+        Athlete.nation_code,
+        Athlete.discipline,
+        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U')
+    ).all()
+
+    assignment_map = {
+        (r.nation_code, r.discipline, r.gender): {
+            'assignedOfficials': int(r.assigned_officials or 0),
+            'singleRoomsUsed': int(r.single_rooms_used or 0),
+        }
+        for r in assigned_rows
+    }
+
+    results = []
+    for row in athletes_rows:
+        if not is_supported_discipline(row.discipline):
+            continue
+
+        officials = compute_official_quota(int(row.athletes_entered or 0))
+        singles_allowed = compute_single_room_entitlement(officials)
+        usage = assignment_map.get((row.nation_code, row.discipline, row.gender), {'assignedOfficials': 0, 'singleRoomsUsed': 0})
+
+        results.append({
+            'nationCode': row.nation_code,
+            'discipline': row.discipline,
+            'gender': row.gender,
+            'athletesEntered': int(row.athletes_entered or 0),
+            'officialQuota': officials,
+            'singleRoomsAllowed': singles_allowed,
+            'assignedOfficials': usage['assignedOfficials'],
+            'singleRoomsUsed': usage['singleRoomsUsed'],
+        })
+
+    return jsonify(results)
 # Statistics & Analytics
 @app.route('/api/analytics/room-availability', methods=['GET'])
 def get_room_availability():
