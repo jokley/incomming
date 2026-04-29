@@ -131,13 +131,23 @@ export function Assignments() {
     try {
       setSubmitting(true);
       setError(null);
+
+      const athleteIds = [
+        occupant1.id,
+        ...(bookingType === 'double' && occupant2?.id ? [occupant2.id] : []),
+      ];
+
+      if (new Set(athleteIds).size !== athleteIds.length) {
+        setError('Athlet darf nicht doppelt gewählt werden');
+        return;
+      }
+
       await api.createRoomAssignment({
-        athleteId: occupant1.id,
+        athleteIds,
         hotelId: selectedHotel,
         roomTypeId: selectedRoomType,
         checkInDate: occupant1.arrivalDate || undefined,
         checkOutDate: occupant1.departureDate || undefined,
-        sharedWithAthleteId: bookingType === 'double' ? occupant2?.id : undefined,
       });
 
       const freshAssignments = await api.getRoomAssignments();
