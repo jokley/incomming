@@ -703,6 +703,8 @@ def create_athlete():
 
 # Room Assignments
 @app.route('/api/room-bookings/grouped', methods=['GET'])
+@app.route('/room-bookings/grouped', methods=['GET'])
+@app.route('/api/room-assignments/grouped', methods=['GET'])
 def get_grouped_room_bookings():
     return _get_grouped_room_bookings_response()
 
@@ -714,6 +716,8 @@ def get_room_assignments():
 
 
 @app.route('/api/fis/official-quotas', methods=['GET'])
+@app.route('/fis/official-quotas', methods=['GET'])
+@app.route('/api/official-quotas', methods=['GET'])
 def get_official_quotas():
     nation_code = request.args.get('nationCode')
     discipline = request.args.get('discipline')
