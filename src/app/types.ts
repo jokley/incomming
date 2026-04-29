@@ -83,6 +83,23 @@ export interface RoomAssignment {
   sharedWith?: Athlete | null;
 }
 
+export interface RoomBookingOccupant {
+  id: string;
+  roomBookingId: string;
+  athlete: Athlete;
+  role?: string | null;
+}
+
+export interface RoomBooking {
+  id: string;
+  hotel: { id: string; name: string };
+  roomType: RoomType;
+  roomNumber?: string | null;
+  checkInDate?: string | null;
+  checkOutDate?: string | null;
+  occupants: RoomBookingOccupant[];
+}
+
 export interface RoomAvailability {
   roomType: RoomType;
   available: number;
@@ -90,3 +107,39 @@ export interface RoomAvailability {
   difference: number;
 }
 
+
+
+export interface HotelCapacityOverview {
+  hotel: { id: string; name: string; location?: string; region?: string };
+  roomTypes: {
+    roomType: RoomType;
+    inventoryRooms: number;
+    inventoryBeds: number;
+    occupiedBeds: number;
+    occupiedRooms: number;
+    remainingRooms: number;
+    remainingBeds: number;
+  }[];
+  totals: {
+    inventoryRooms: number;
+    inventoryBeds: number;
+    occupiedRooms: number;
+    occupiedBeds: number;
+    remainingRooms: number;
+    remainingBeds: number;
+  };
+}
+
+export interface HotelReservationRow {
+  assignmentId: string;
+  roomNumber?: string | null;
+  roomType: RoomType;
+  occupancy: number;
+  guestName: string;
+  sharedWithName?: string | null;
+  nationCode?: string;
+  discipline?: string;
+  checkInDate?: string | null;
+  checkOutDate?: string | null;
+  specialNotes?: string | null;
+}

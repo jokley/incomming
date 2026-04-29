@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, ImportRun
+from fis_rules import compute_official_quota, compute_single_room_entitlement, is_supported_discipline
 from datetime import datetime
 import os
 import csv
 import io
-from sqlalchemy import text
+from sqlalchemy import text, func
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +17,107 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'fr
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
+
+
+def _normalize_gender(athlete):
+    raw = (athlete.gender or athlete.for_gender or '').strip().lower()
+    if raw in {'m', 'male', 'man', 'men', 'herr', 'herren'}:
+        return 'male'
+    if raw in {'f', 'female', 'woman', 'women', 'dame', 'damen'}:
+        return 'female'
+    return None
+
+
+def _dates_overlap(start_a, end_a, start_b, end_b):
+    if not start_a or not end_a or not start_b or not end_b:
+        return False
+    return start_a <= end_b and start_b <= end_a
+
+
+def _booking_error(reason_code, message, details=None):
+    return jsonify({
+        'error': 'VALIDATION_ERROR',
+        'reasonCode': reason_code,
+        'message': message,
+        'details': details or {}
+    }), 400
+
+
+def _validate_room_assignment(data, assignment_id=None):
+    athlete_id = int(data['athleteId'])
+    hotel_id = int(data['hotelId'])
+    room_type_id = int(data['roomTypeId'])
+    shared_with_id = int(data['sharedWithAthleteId']) if data.get('sharedWithAthleteId') else None
+    check_in = datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None
+    check_out = datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+
+    athlete = Athlete.query.get(athlete_id)
+    room_type = RoomType.query.get(room_type_id)
+    hotel = Hotel.query.get(hotel_id)
+    if not athlete:
+        return _booking_error('ATHLETE_NOT_FOUND', 'Selected athlete does not exist.')
+    if not room_type:
+        return _booking_error('ROOM_TYPE_NOT_FOUND', 'Selected room type does not exist.')
+    if not hotel:
+        return _booking_error('HOTEL_NOT_FOUND', 'Selected hotel does not exist.')
+
+    partner = None
+    if shared_with_id:
+        partner = Athlete.query.get(shared_with_id)
+        if not partner:
+            return _booking_error('PARTNER_NOT_FOUND', 'Selected partner does not exist.')
+
+    strict_same_gender = room_type.max_persons == 2 and partner is not None
+    if strict_same_gender:
+        athlete_gender = _normalize_gender(athlete)
+        partner_gender = _normalize_gender(partner)
+        if athlete_gender is None or partner_gender is None:
+            return _booking_error(
+                'STRICT_GENDER_UNKNOWN',
+                'Mixed or unknown gender pairing is not allowed for strict same-gender occupancy.',
+                {'athleteId': str(athlete.id), 'partnerId': str(partner.id)}
+            )
+        if athlete_gender != partner_gender:
+            return _booking_error(
+                'STRICT_GENDER_MISMATCH',
+                'Mixed or unknown gender pairing is not allowed for strict same-gender occupancy.',
+                {'athleteGender': athlete_gender, 'partnerGender': partner_gender}
+            )
+
+    athlete_ids = [athlete_id] + ([shared_with_id] if shared_with_id else [])
+    overlap_query = RoomAssignment.query.filter(
+        RoomAssignment.athlete_id.in_(athlete_ids) |
+        RoomAssignment.shared_with_athlete_id.in_(athlete_ids)
+    )
+    if assignment_id:
+        overlap_query = overlap_query.filter(RoomAssignment.id != assignment_id)
+
+    for existing in overlap_query.all():
+        existing_ids = {existing.athlete_id, existing.shared_with_athlete_id}
+        for current_athlete_id in athlete_ids:
+            if current_athlete_id in existing_ids and _dates_overlap(
+                check_in,
+                check_out,
+                existing.check_in_date,
+                existing.check_out_date
+            ):
+                return _booking_error(
+                    'ATHLETE_DATE_OVERLAP',
+                    'Athlete already has an overlapping booking in this date range.',
+                    {
+                        'athleteId': str(current_athlete_id),
+                        'existingAssignmentId': str(existing.id)
+                    }
+                )
+
+    return {
+        'athlete_id': athlete_id,
+        'hotel_id': hotel_id,
+        'room_type_id': room_type_id,
+        'check_in_date': check_in,
+        'check_out_date': check_out,
+        'shared_with_athlete_id': shared_with_id
+    }
 
 # Initialize database
 with app.app_context():
@@ -40,6 +142,51 @@ with app.app_context():
         db.session.commit()
 
     ensure_athlete_columns()
+
+    def backfill_room_bookings():
+        existing_booking = RoomBooking.query.first()
+        if existing_booking:
+            return
+
+        assignments = RoomAssignment.query.all()
+        booking_map = {}
+
+        for assignment in assignments:
+            key = (
+                assignment.hotel_id,
+                assignment.room_type_id,
+                assignment.room_number or '',
+                assignment.check_in_date,
+                assignment.check_out_date
+            )
+            booking = booking_map.get(key)
+            if booking is None:
+                booking = RoomBooking(
+                    hotel_id=assignment.hotel_id,
+                    room_type_id=assignment.room_type_id,
+                    room_number=assignment.room_number,
+                    check_in_date=assignment.check_in_date,
+                    check_out_date=assignment.check_out_date
+                )
+                db.session.add(booking)
+                db.session.flush()
+                booking_map[key] = booking
+
+            athlete_ids = {assignment.athlete_id}
+            if assignment.shared_with_athlete_id:
+                athlete_ids.add(assignment.shared_with_athlete_id)
+
+            for athlete_id in athlete_ids:
+                exists = RoomBookingOccupant.query.filter_by(
+                    room_booking_id=booking.id,
+                    athlete_id=athlete_id
+                ).first()
+                if not exists:
+                    db.session.add(RoomBookingOccupant(room_booking_id=booking.id, athlete_id=athlete_id))
+
+        db.session.commit()
+
+    backfill_room_bookings()
 
 
 # ============================================================================
@@ -585,33 +732,225 @@ def create_athlete():
 # Room Assignments
 @app.route('/api/room-assignments', methods=['GET'])
 def get_room_assignments():
-    assignments = RoomAssignment.query.all()
-    return jsonify([a.to_dict() for a in assignments])
+    bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number).all()
+    return jsonify([b.to_dict() for b in bookings])
 
 
 @app.route('/api/room-assignments', methods=['POST'])
 def create_room_assignment():
     data = request.json
+    validated = _validate_room_assignment(data)
+    if isinstance(validated, tuple):
+        return validated
     assignment = RoomAssignment(
-        athlete_id=int(data['athleteId']),
+        athlete_id=validated['athlete_id'],
+        hotel_id=validated['hotel_id'],
+        room_type_id=validated['room_type_id'],
+        check_in_date=validated['check_in_date'],
+        check_out_date=validated['check_out_date'],
+        shared_with_athlete_id=validated['shared_with_athlete_id']
+    athlete_ids = data.get('athleteIds', [])
+    if not isinstance(athlete_ids, list) or len(athlete_ids) < 1 or len(athlete_ids) > 2:
+        return jsonify({'error': 'athleteIds must include 1 or 2 athlete IDs'}), 400
+
+    room_type = RoomType.query.get_or_404(int(data['roomTypeId']))
+    if len(athlete_ids) > room_type.max_persons:
+        return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
+
+    booking = RoomBooking(
         hotel_id=int(data['hotelId']),
         room_type_id=int(data['roomTypeId']),
+        room_number=data.get('roomNumber'),
         check_in_date=datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None,
-        check_out_date=datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None,
-        shared_with_athlete_id=int(data['sharedWithAthleteId']) if data.get('sharedWithAthleteId') else None
+        check_out_date=datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
     )
-    db.session.add(assignment)
+    db.session.add(booking)
+    db.session.flush()
+
+    unique_athlete_ids = []
+    for athlete_id in athlete_ids:
+        int_id = int(athlete_id)
+        if int_id not in unique_athlete_ids:
+            unique_athlete_ids.append(int_id)
+
+    if len(unique_athlete_ids) > room_type.max_persons:
+        return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
+
+    for athlete_id in unique_athlete_ids:
+        db.session.add(RoomBookingOccupant(
+            room_booking_id=booking.id,
+            athlete_id=athlete_id
+        ))
+
     db.session.commit()
-    return jsonify(assignment.to_dict()), 201
+    return jsonify(booking.to_dict()), 201
+
+
+@app.route('/api/room-assignments/<int:assignment_id>', methods=['PUT'])
+def update_room_assignment(assignment_id):
+    assignment = RoomAssignment.query.get_or_404(assignment_id)
+    data = request.json
+    validated = _validate_room_assignment(data, assignment_id=assignment_id)
+    if isinstance(validated, tuple):
+        return validated
+    assignment.athlete_id = validated['athlete_id']
+    assignment.hotel_id = validated['hotel_id']
+    assignment.room_type_id = validated['room_type_id']
+    assignment.check_in_date = validated['check_in_date']
+    assignment.check_out_date = validated['check_out_date']
+    assignment.shared_with_athlete_id = validated['shared_with_athlete_id']
+    db.session.commit()
+    return jsonify(assignment.to_dict())
 
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['DELETE'])
 def delete_room_assignment(assignment_id):
-    assignment = RoomAssignment.query.get_or_404(assignment_id)
-    db.session.delete(assignment)
+    booking = RoomBooking.query.get_or_404(assignment_id)
+    db.session.delete(booking)
     db.session.commit()
     return '', 204
 
+
+
+
+@app.route('/api/hotels/capacity-overview', methods=['GET'])
+def get_hotels_capacity_overview():
+    hotel_id = request.args.get('hotel_id', type=int)
+    room_type_id = request.args.get('room_type_id', type=int)
+    nation = request.args.get('nation')
+    discipline = request.args.get('discipline')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+    end_date = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
+
+    inventory_query = HotelRoomInventory.query.join(RoomType)
+    if hotel_id:
+        inventory_query = inventory_query.filter(HotelRoomInventory.hotel_id == hotel_id)
+    if room_type_id:
+        inventory_query = inventory_query.filter(HotelRoomInventory.room_type_id == room_type_id)
+    if start_date and end_date:
+        inventory_query = inventory_query.filter(
+            HotelRoomInventory.available_from <= end_date,
+            HotelRoomInventory.available_until >= start_date
+        )
+
+    assignment_query = RoomAssignment.query.join(Athlete).join(RoomType)
+    if hotel_id:
+        assignment_query = assignment_query.filter(RoomAssignment.hotel_id == hotel_id)
+    if room_type_id:
+        assignment_query = assignment_query.filter(RoomAssignment.room_type_id == room_type_id)
+    if nation:
+        assignment_query = assignment_query.filter(Athlete.nation_code == nation)
+    if discipline:
+        assignment_query = assignment_query.filter(Athlete.discipline == discipline)
+    if start_date and end_date:
+        assignment_query = assignment_query.filter(
+            RoomAssignment.check_in_date <= end_date,
+            RoomAssignment.check_out_date >= start_date
+        )
+
+    hotel_map = {}
+
+    for inv in inventory_query.all():
+        hid = inv.hotel_id
+        if hid not in hotel_map:
+            hotel_map[hid] = {
+                'hotel': {'id': str(inv.hotel.id), 'name': inv.hotel.name, 'location': inv.hotel.location, 'region': inv.hotel.region},
+                'roomTypes': {},
+                'totals': {'inventoryRooms': 0, 'inventoryBeds': 0, 'occupiedRooms': 0, 'occupiedBeds': 0}
+            }
+
+        rt_id = str(inv.room_type.id)
+        rt_entry = hotel_map[hid]['roomTypes'].setdefault(rt_id, {
+            'roomType': inv.room_type.to_dict(),
+            'inventoryRooms': 0,
+            'inventoryBeds': 0,
+            'occupiedBeds': 0
+        })
+        rt_entry['inventoryRooms'] += inv.room_count
+        rt_entry['inventoryBeds'] += inv.room_count * inv.room_type.max_persons
+
+    for a in assignment_query.all():
+        hid = a.hotel_id
+        if hid not in hotel_map:
+            hotel_map[hid] = {
+                'hotel': {'id': str(a.hotel.id), 'name': a.hotel.name, 'location': a.hotel.location, 'region': a.hotel.region},
+                'roomTypes': {},
+                'totals': {'inventoryRooms': 0, 'inventoryBeds': 0, 'occupiedRooms': 0, 'occupiedBeds': 0}
+            }
+
+        rt_id = str(a.room_type.id)
+        rt_entry = hotel_map[hid]['roomTypes'].setdefault(rt_id, {
+            'roomType': a.room_type.to_dict(),
+            'inventoryRooms': 0,
+            'inventoryBeds': 0,
+            'occupiedBeds': 0
+        })
+        rt_entry['occupiedBeds'] += 1
+
+    result = []
+    for hdata in hotel_map.values():
+        room_types = []
+        for rt in hdata['roomTypes'].values():
+            occ_rooms = (rt['occupiedBeds'] + rt['roomType']['maxPersons'] - 1) // rt['roomType']['maxPersons'] if rt['roomType']['maxPersons'] > 0 else 0
+            rt['occupiedRooms'] = occ_rooms
+            rt['remainingRooms'] = max(0, rt['inventoryRooms'] - occ_rooms)
+            rt['remainingBeds'] = max(0, rt['inventoryBeds'] - rt['occupiedBeds'])
+            room_types.append(rt)
+
+            hdata['totals']['inventoryRooms'] += rt['inventoryRooms']
+            hdata['totals']['inventoryBeds'] += rt['inventoryBeds']
+            hdata['totals']['occupiedRooms'] += occ_rooms
+            hdata['totals']['occupiedBeds'] += rt['occupiedBeds']
+
+        hdata['totals']['remainingRooms'] = max(0, hdata['totals']['inventoryRooms'] - hdata['totals']['occupiedRooms'])
+        hdata['totals']['remainingBeds'] = max(0, hdata['totals']['inventoryBeds'] - hdata['totals']['occupiedBeds'])
+        hdata['roomTypes'] = room_types
+        result.append(hdata)
+
+    return jsonify(result)
+
+
+@app.route('/api/hotels/<int:hotel_id>/reservations', methods=['GET'])
+def get_hotel_reservations(hotel_id):
+    room_type_id = request.args.get('room_type_id', type=int)
+    nation = request.args.get('nation')
+    discipline = request.args.get('discipline')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+    end_date = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
+
+    q = RoomAssignment.query.join(Athlete).join(RoomType).filter(RoomAssignment.hotel_id == hotel_id)
+    if room_type_id:
+        q = q.filter(RoomAssignment.room_type_id == room_type_id)
+    if nation:
+        q = q.filter(Athlete.nation_code == nation)
+    if discipline:
+        q = q.filter(Athlete.discipline == discipline)
+    if start_date and end_date:
+        q = q.filter(RoomAssignment.check_in_date <= end_date, RoomAssignment.check_out_date >= start_date)
+
+    assignments = q.order_by(RoomAssignment.check_in_date.asc().nullslast()).all()
+    rows = []
+    for a in assignments:
+        rows.append({
+            'assignmentId': str(a.id),
+            'roomNumber': a.room_number,
+            'roomType': a.room_type.to_dict(),
+            'occupancy': 2 if a.shared_with else 1,
+            'guestName': f"{a.athlete.firstname} {a.athlete.lastname}",
+            'sharedWithName': f"{a.shared_with.firstname} {a.shared_with.lastname}" if a.shared_with else None,
+            'nationCode': a.athlete.nation_code,
+            'discipline': a.athlete.discipline,
+            'checkInDate': a.check_in_date.isoformat() if a.check_in_date else None,
+            'checkOutDate': a.check_out_date.isoformat() if a.check_out_date else None,
+            'specialNotes': a.athlete.special_meal
+        })
+    return jsonify(rows)
 
 # Statistics & Analytics
 @app.route('/api/analytics/room-availability', methods=['GET'])

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Save, Loader2, Trash2, Users, Info } from 'lucide-react';
 import { api } from '../services/api';
 import { Athlete, Hotel, RoomType, RoomAssignment } from '../types';
+import { OfficialQuotaUsage, getComplianceStatus } from '../services/fisRules';
 
 type BookingType = 'single' | 'double';
 
@@ -24,6 +25,7 @@ export function Assignments() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quotaUsage, setQuotaUsage] = useState<OfficialQuotaUsage[]>([]);
 
   useEffect(() => {
     loadData();
@@ -32,16 +34,18 @@ export function Assignments() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [athletesData, hotelsData, roomTypesData, assignmentsData] = await Promise.all([
+      const [athletesData, hotelsData, roomTypesData, assignmentsData, quotaData] = await Promise.all([
         api.getAthletes(),
         api.getHotels(),
         api.getRoomTypes(),
         api.getRoomAssignments(),
+        api.getOfficialQuotaUsage(),
       ]);
       setAthletes(athletesData);
       setHotels(hotelsData);
       setRoomTypes(roomTypesData);
       setAssignments(assignmentsData);
+      setQuotaUsage(quotaData);
       setError(null);
     } catch (err) {
       setError('Fehler beim Laden der Daten');
