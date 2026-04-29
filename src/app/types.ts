@@ -83,10 +83,26 @@ export interface RoomAssignment {
   sharedWith?: Athlete | null;
 }
 
+export interface RoomBookingOccupant {
+  id: string;
+  roomBookingId: string;
+  athlete: Athlete;
+  role?: string | null;
+}
+
+export interface RoomBooking {
+  id: string;
+  hotel: { id: string; name: string };
+  roomType: RoomType;
+  roomNumber?: string | null;
+  checkInDate?: string | null;
+  checkOutDate?: string | null;
+  occupants: RoomBookingOccupant[];
+}
+
 export interface RoomAvailability {
   roomType: RoomType;
   available: number;
   demand: number;
   difference: number;
 }
-

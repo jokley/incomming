@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, ImportRun
+from models import db, RoomType, Hotel, HotelRoomInventory, Event, EventRoomDemand, Athlete, RoomAssignment, RoomBooking, RoomBookingOccupant, ImportRun
 from datetime import datetime
 import os
 import csv
@@ -141,6 +141,51 @@ with app.app_context():
         db.session.commit()
 
     ensure_athlete_columns()
+
+    def backfill_room_bookings():
+        existing_booking = RoomBooking.query.first()
+        if existing_booking:
+            return
+
+        assignments = RoomAssignment.query.all()
+        booking_map = {}
+
+        for assignment in assignments:
+            key = (
+                assignment.hotel_id,
+                assignment.room_type_id,
+                assignment.room_number or '',
+                assignment.check_in_date,
+                assignment.check_out_date
+            )
+            booking = booking_map.get(key)
+            if booking is None:
+                booking = RoomBooking(
+                    hotel_id=assignment.hotel_id,
+                    room_type_id=assignment.room_type_id,
+                    room_number=assignment.room_number,
+                    check_in_date=assignment.check_in_date,
+                    check_out_date=assignment.check_out_date
+                )
+                db.session.add(booking)
+                db.session.flush()
+                booking_map[key] = booking
+
+            athlete_ids = {assignment.athlete_id}
+            if assignment.shared_with_athlete_id:
+                athlete_ids.add(assignment.shared_with_athlete_id)
+
+            for athlete_id in athlete_ids:
+                exists = RoomBookingOccupant.query.filter_by(
+                    room_booking_id=booking.id,
+                    athlete_id=athlete_id
+                ).first()
+                if not exists:
+                    db.session.add(RoomBookingOccupant(room_booking_id=booking.id, athlete_id=athlete_id))
+
+        db.session.commit()
+
+    backfill_room_bookings()
 
 
 # ============================================================================
@@ -686,8 +731,8 @@ def create_athlete():
 # Room Assignments
 @app.route('/api/room-assignments', methods=['GET'])
 def get_room_assignments():
-    assignments = RoomAssignment.query.all()
-    return jsonify([a.to_dict() for a in assignments])
+    bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number).all()
+    return jsonify([b.to_dict() for b in bookings])
 
 
 @app.route('/api/room-assignments', methods=['POST'])
@@ -703,10 +748,41 @@ def create_room_assignment():
         check_in_date=validated['check_in_date'],
         check_out_date=validated['check_out_date'],
         shared_with_athlete_id=validated['shared_with_athlete_id']
+    athlete_ids = data.get('athleteIds', [])
+    if not isinstance(athlete_ids, list) or len(athlete_ids) < 1 or len(athlete_ids) > 2:
+        return jsonify({'error': 'athleteIds must include 1 or 2 athlete IDs'}), 400
+
+    room_type = RoomType.query.get_or_404(int(data['roomTypeId']))
+    if len(athlete_ids) > room_type.max_persons:
+        return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
+
+    booking = RoomBooking(
+        hotel_id=int(data['hotelId']),
+        room_type_id=int(data['roomTypeId']),
+        room_number=data.get('roomNumber'),
+        check_in_date=datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None,
+        check_out_date=datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
     )
-    db.session.add(assignment)
+    db.session.add(booking)
+    db.session.flush()
+
+    unique_athlete_ids = []
+    for athlete_id in athlete_ids:
+        int_id = int(athlete_id)
+        if int_id not in unique_athlete_ids:
+            unique_athlete_ids.append(int_id)
+
+    if len(unique_athlete_ids) > room_type.max_persons:
+        return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
+
+    for athlete_id in unique_athlete_ids:
+        db.session.add(RoomBookingOccupant(
+            room_booking_id=booking.id,
+            athlete_id=athlete_id
+        ))
+
     db.session.commit()
-    return jsonify(assignment.to_dict()), 201
+    return jsonify(booking.to_dict()), 201
 
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['PUT'])
@@ -728,10 +804,16 @@ def update_room_assignment(assignment_id):
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['DELETE'])
 def delete_room_assignment(assignment_id):
-    assignment = RoomAssignment.query.get_or_404(assignment_id)
-    db.session.delete(assignment)
+    booking = RoomBooking.query.get_or_404(assignment_id)
+    db.session.delete(booking)
     db.session.commit()
     return '', 204
+
+
+@app.route('/api/room-bookings/grouped', methods=['GET'])
+def get_room_bookings_grouped():
+    bookings = RoomBooking.query.order_by(RoomBooking.hotel_id, RoomBooking.room_number, RoomBooking.id).all()
+    return jsonify([booking.to_dict() for booking in bookings])
 
 
 # Statistics & Analytics
