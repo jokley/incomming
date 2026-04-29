@@ -259,3 +259,53 @@ class RoomAssignment(db.Model):
             'checkOutDate': self.check_out_date.isoformat() if self.check_out_date else None,
             'sharedWith': self.shared_with.to_dict() if self.shared_with else None
         }
+
+
+class RoomBooking(db.Model):
+    __tablename__ = 'room_booking'
+
+    id = db.Column(db.Integer, primary_key=True)
+    hotel_id = db.Column(db.Integer, db.ForeignKey('hotel.id'), nullable=False)
+    room_type_id = db.Column(db.Integer, db.ForeignKey('room_type.id'), nullable=False)
+    room_number = db.Column(db.String(20))
+    check_in_date = db.Column(db.Date)
+    check_out_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    hotel = db.relationship('Hotel', backref='room_bookings')
+    room_type = db.relationship('RoomType', backref='room_bookings')
+    occupants = db.relationship('RoomBookingOccupant', backref='room_booking', lazy=True, cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'hotel': {'id': str(self.hotel_id), 'name': self.hotel.name},
+            'roomType': self.room_type.to_dict(),
+            'roomNumber': self.room_number,
+            'checkInDate': self.check_in_date.isoformat() if self.check_in_date else None,
+            'checkOutDate': self.check_out_date.isoformat() if self.check_out_date else None,
+            'occupants': [occupant.to_dict() for occupant in self.occupants]
+        }
+
+
+class RoomBookingOccupant(db.Model):
+    __tablename__ = 'room_booking_occupant'
+    __table_args__ = (
+        db.UniqueConstraint('room_booking_id', 'athlete_id', name='uq_room_booking_athlete'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    room_booking_id = db.Column(db.Integer, db.ForeignKey('room_booking.id'), nullable=False)
+    athlete_id = db.Column(db.Integer, db.ForeignKey('athlete.id'), nullable=False)
+    role = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    athlete = db.relationship('Athlete', backref='room_booking_memberships')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'roomBookingId': str(self.room_booking_id),
+            'athlete': self.athlete.to_dict(),
+            'role': self.role
+        }

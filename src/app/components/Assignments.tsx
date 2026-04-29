@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Loader2, Trash2, Users, Info } from 'lucide-react';
 import { api } from '../services/api';
 import { Athlete, Hotel, RoomType, RoomAssignment } from '../types';
+import { OfficialQuotaUsage, getComplianceStatus } from '../services/fisRules';
 
 export function Assignments() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -14,6 +15,7 @@ export function Assignments() {
   const [selectedPartner, setSelectedPartner] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quotaUsage, setQuotaUsage] = useState<OfficialQuotaUsage[]>([]);
 
   useEffect(() => {
     loadData();
@@ -22,16 +24,18 @@ export function Assignments() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [athletesData, hotelsData, roomTypesData, assignmentsData] = await Promise.all([
+      const [athletesData, hotelsData, roomTypesData, assignmentsData, quotaData] = await Promise.all([
         api.getAthletes(),
         api.getHotels(),
         api.getRoomTypes(),
         api.getRoomAssignments(),
+        api.getOfficialQuotaUsage(),
       ]);
       setAthletes(athletesData);
       setHotels(hotelsData);
       setRoomTypes(roomTypesData);
       setAssignments(assignmentsData);
+      setQuotaUsage(quotaData);
       setError(null);
     } catch (err) {
       setError('Fehler beim Laden der Daten');
@@ -79,6 +83,13 @@ export function Assignments() {
       })()
     : [];
 
+
+
+  const badgeClassForStatus = (status: string) => {
+    if (status === 'ok') return 'bg-green-100 text-green-800 border-green-300';
+    if (status === 'over') return 'bg-red-100 text-red-800 border-red-300';
+    return 'bg-amber-100 text-amber-800 border-amber-300';
+  };
   const handleAssignment = async () => {
     if (!selectedAthlete || !selectedHotel || !selectedRoomType) {
       setError('Bitte füllen Sie alle Pflichtfelder aus');
@@ -86,6 +97,13 @@ export function Assignments() {
     }
 
     try {
+      if (requiresStrictPairing && selectedPartner) {
+        const partner = athletes.find(a => a.id === selectedPartner);
+        if (!selectedGender || !partner || normalizedGender(partner) !== selectedGender) {
+          setPartnerHint('Partner muss gender-kompatibel sein (gleiche bekannte Gender-Kategorie).');
+          return;
+        }
+      }
       const athlete = athletes.find(a => a.id === selectedAthlete);
       await api.createRoomAssignment({
         athleteId: selectedAthlete,
@@ -102,8 +120,11 @@ export function Assignments() {
       setSelectedRoomType('');
       setSelectedPartner('');
       setError(null);
+      setPartnerHint(null);
     } catch (err) {
-      setError('Fehler beim Zuweisen des Athleten');
+      const apiError = err as { message?: string; reasonCode?: string };
+      const reason = apiError.reasonCode ? ` (${apiError.reasonCode})` : '';
+      setError(apiError.message ? `${apiError.message}${reason}` : 'Fehler beim Zuweisen des Athleten');
       console.error(err);
     }
   };
@@ -155,6 +176,7 @@ export function Assignments() {
               onChange={(e) => {
                 setSelectedAthlete(e.target.value);
                 setSelectedPartner(''); // Reset partner when athlete changes
+                setPartnerHint(null);
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
@@ -224,12 +246,18 @@ export function Assignments() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
               <option value="">-- Kein Partner --</option>
-              {potentialPartners.map(athlete => (
+              {partnerOptions.map(athlete => (
                 <option key={athlete.id} value={athlete.id}>
                   {athlete.firstname} {athlete.lastname}
                 </option>
               ))}
             </select>
+            {excludedPartnerReasons.length > 0 && (
+              <p className="text-xs text-amber-700 mt-1">
+                Ausgeschlossen: {excludedPartnerReasons.slice(0, 2).join(' • ')}
+              </p>
+            )}
+            {partnerHint && <p className="text-xs text-red-700 mt-1">{partnerHint}</p>}
           </div>
 
           <button
@@ -306,6 +334,47 @@ export function Assignments() {
                     {hotelAssignments.length} Athleten
                   </span>
                 </h4>
+                <div className="overflow-x-auto mb-4">
+                  <table className="min-w-full text-xs border border-gray-200 rounded">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="text-left px-2 py-1">Team</th>
+                        <th className="text-left px-2 py-1">Official Quota</th>
+                        <th className="text-left px-2 py-1">Assigned Officials</th>
+                        <th className="text-left px-2 py-1">Single Rooms</th>
+                        <th className="text-left px-2 py-1">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hotelAssignments.reduce((acc, assignment) => {
+                        const key = `${assignment.athlete.nationCode}|${assignment.athlete.discipline || ''}|${assignment.athlete.forGender || assignment.athlete.gender || 'U'}`;
+                        if (!acc[key]) {
+                          acc[key] = { nationCode: assignment.athlete.nationCode, discipline: assignment.athlete.discipline || '', gender: assignment.athlete.forGender || assignment.athlete.gender || 'U' };
+                        }
+                        return acc;
+                      }, {} as Record<string, { nationCode: string; discipline: string; gender: string }> ) && Object.values(hotelAssignments.reduce((acc, assignment) => {
+                        const key = `${assignment.athlete.nationCode}|${assignment.athlete.discipline || ''}|${assignment.athlete.forGender || assignment.athlete.gender || 'U'}`;
+                        if (!acc[key]) {
+                          acc[key] = { nationCode: assignment.athlete.nationCode, discipline: assignment.athlete.discipline || '', gender: assignment.athlete.forGender || assignment.athlete.gender || 'U' };
+                        }
+                        return acc;
+                      }, {} as Record<string, { nationCode: string; discipline: string; gender: string }> )).map((team) => {
+                        const quota = quotaUsage.find(q => q.nationCode === team.nationCode && q.discipline === team.discipline && q.gender === team.gender);
+                        const status = quota ? getComplianceStatus(quota.assignedOfficials, quota.officialQuota) : 'missing';
+                        return (
+                          <tr key={`${team.nationCode}-${team.discipline}-${team.gender}`} className="border-t">
+                            <td className="px-2 py-1">{team.nationCode} • {team.discipline || 'N/A'} • {team.gender}</td>
+                            <td className="px-2 py-1">{quota?.officialQuota ?? '-'}</td>
+                            <td className="px-2 py-1">{quota?.assignedOfficials ?? 0}</td>
+                            <td className="px-2 py-1">{quota ? `${quota.singleRoomsUsed} / ${quota.singleRoomsAllowed}` : '-'}</td>
+                            <td className="px-2 py-1"><span className={`px-2 py-0.5 rounded-full border ${badgeClassForStatus(status)}`}>{status.toUpperCase()}</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {hotelAssignments.map(assignment => (
                     <div
