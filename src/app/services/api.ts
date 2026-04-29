@@ -5,8 +5,10 @@ import {
   Event,
   EventRoomDemand,
   Athlete,
-  RoomBooking,
-  RoomAvailability
+  RoomAssignment,
+  RoomAvailability,
+  HotelCapacityOverview,
+  HotelReservationRow
 } from '../types';
 import { OfficialQuotaUsage } from './fisRules';
 
@@ -458,6 +460,44 @@ class ApiService {
     return this.request<void>(`/room-assignments/${id}`, {
       method: 'DELETE',
     });
+  }
+
+
+
+  async getHotelCapacityOverview(params?: {
+    hotel_id?: string;
+    start_date?: string;
+    end_date?: string;
+    room_type_id?: string;
+    nation?: string;
+    discipline?: string;
+  }): Promise<HotelCapacityOverview[]> {
+    const query = new URLSearchParams();
+    if (params?.hotel_id) query.append('hotel_id', params.hotel_id);
+    if (params?.start_date) query.append('start_date', params.start_date);
+    if (params?.end_date) query.append('end_date', params.end_date);
+    if (params?.room_type_id) query.append('room_type_id', params.room_type_id);
+    if (params?.nation) query.append('nation', params.nation);
+    if (params?.discipline) query.append('discipline', params.discipline);
+    const qs = query.toString();
+    return this.request<HotelCapacityOverview[]>(`/hotels/capacity-overview${qs ? '?' + qs : ''}`);
+  }
+
+  async getHotelReservations(hotelId: string, params?: {
+    start_date?: string;
+    end_date?: string;
+    room_type_id?: string;
+    nation?: string;
+    discipline?: string;
+  }): Promise<HotelReservationRow[]> {
+    const query = new URLSearchParams();
+    if (params?.start_date) query.append('start_date', params.start_date);
+    if (params?.end_date) query.append('end_date', params.end_date);
+    if (params?.room_type_id) query.append('room_type_id', params.room_type_id);
+    if (params?.nation) query.append('nation', params.nation);
+    if (params?.discipline) query.append('discipline', params.discipline);
+    const qs = query.toString();
+    return this.request<HotelReservationRow[]>(`/hotels/${hotelId}/reservations${qs ? '?' + qs : ''}`);
   }
 
   // ============================================================================

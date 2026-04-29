@@ -106,3 +106,40 @@ export interface RoomAvailability {
   demand: number;
   difference: number;
 }
+
+
+
+export interface HotelCapacityOverview {
+  hotel: { id: string; name: string; location?: string; region?: string };
+  roomTypes: {
+    roomType: RoomType;
+    inventoryRooms: number;
+    inventoryBeds: number;
+    occupiedBeds: number;
+    occupiedRooms: number;
+    remainingRooms: number;
+    remainingBeds: number;
+  }[];
+  totals: {
+    inventoryRooms: number;
+    inventoryBeds: number;
+    occupiedRooms: number;
+    occupiedBeds: number;
+    remainingRooms: number;
+    remainingBeds: number;
+  };
+}
+
+export interface HotelReservationRow {
+  assignmentId: string;
+  roomNumber?: string | null;
+  roomType: RoomType;
+  occupancy: number;
+  guestName: string;
+  sharedWithName?: string | null;
+  nationCode?: string;
+  discipline?: string;
+  checkInDate?: string | null;
+  checkOutDate?: string | null;
+  specialNotes?: string | null;
+}

@@ -813,82 +813,145 @@ def delete_room_assignment(assignment_id):
 
 
 
-@app.route('/api/fis/official-quotas', methods=['GET'])
-def get_fis_official_quotas():
-    nation = request.args.get('nationCode')
+@app.route('/api/hotels/capacity-overview', methods=['GET'])
+def get_hotels_capacity_overview():
+    hotel_id = request.args.get('hotel_id', type=int)
+    room_type_id = request.args.get('room_type_id', type=int)
+    nation = request.args.get('nation')
     discipline = request.args.get('discipline')
-    gender = request.args.get('gender')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
 
-    athletes_query = db.session.query(
-        Athlete.nation_code.label('nation_code'),
-        Athlete.discipline.label('discipline'),
-        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U').label('gender'),
-        func.count(Athlete.id).label('athletes_entered')
-    )
+    start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+    end_date = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
 
+    inventory_query = HotelRoomInventory.query.join(RoomType)
+    if hotel_id:
+        inventory_query = inventory_query.filter(HotelRoomInventory.hotel_id == hotel_id)
+    if room_type_id:
+        inventory_query = inventory_query.filter(HotelRoomInventory.room_type_id == room_type_id)
+    if start_date and end_date:
+        inventory_query = inventory_query.filter(
+            HotelRoomInventory.available_from <= end_date,
+            HotelRoomInventory.available_until >= start_date
+        )
+
+    assignment_query = RoomAssignment.query.join(Athlete).join(RoomType)
+    if hotel_id:
+        assignment_query = assignment_query.filter(RoomAssignment.hotel_id == hotel_id)
+    if room_type_id:
+        assignment_query = assignment_query.filter(RoomAssignment.room_type_id == room_type_id)
     if nation:
-        athletes_query = athletes_query.filter(Athlete.nation_code == nation)
+        assignment_query = assignment_query.filter(Athlete.nation_code == nation)
     if discipline:
-        athletes_query = athletes_query.filter(Athlete.discipline == discipline)
-    if gender:
-        athletes_query = athletes_query.filter(func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U') == gender)
+        assignment_query = assignment_query.filter(Athlete.discipline == discipline)
+    if start_date and end_date:
+        assignment_query = assignment_query.filter(
+            RoomAssignment.check_in_date <= end_date,
+            RoomAssignment.check_out_date >= start_date
+        )
 
-    athletes_rows = athletes_query.group_by(
-        Athlete.nation_code,
-        Athlete.discipline,
-        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U')
-    ).all()
+    hotel_map = {}
 
-    assigned_rows = db.session.query(
-        Athlete.nation_code.label('nation_code'),
-        Athlete.discipline.label('discipline'),
-        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U').label('gender'),
-        func.count(RoomAssignment.id).label('assigned_officials'),
-        func.sum(func.case((RoomType.max_persons == 1, 1), else_=0)).label('single_rooms_used')
-    ).join(RoomAssignment, RoomAssignment.athlete_id == Athlete.id)     .join(RoomType, RoomType.id == RoomAssignment.room_type_id)
+    for inv in inventory_query.all():
+        hid = inv.hotel_id
+        if hid not in hotel_map:
+            hotel_map[hid] = {
+                'hotel': {'id': str(inv.hotel.id), 'name': inv.hotel.name, 'location': inv.hotel.location, 'region': inv.hotel.region},
+                'roomTypes': {},
+                'totals': {'inventoryRooms': 0, 'inventoryBeds': 0, 'occupiedRooms': 0, 'occupiedBeds': 0}
+            }
 
-    if nation:
-        assigned_rows = assigned_rows.filter(Athlete.nation_code == nation)
-    if discipline:
-        assigned_rows = assigned_rows.filter(Athlete.discipline == discipline)
-    if gender:
-        assigned_rows = assigned_rows.filter(func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U') == gender)
-
-    assigned_rows = assigned_rows.group_by(
-        Athlete.nation_code,
-        Athlete.discipline,
-        func.coalesce(func.nullif(Athlete.for_gender, ''), Athlete.gender, 'U')
-    ).all()
-
-    assignment_map = {
-        (r.nation_code, r.discipline, r.gender): {
-            'assignedOfficials': int(r.assigned_officials or 0),
-            'singleRoomsUsed': int(r.single_rooms_used or 0),
-        }
-        for r in assigned_rows
-    }
-
-    results = []
-    for row in athletes_rows:
-        if not is_supported_discipline(row.discipline):
-            continue
-
-        officials = compute_official_quota(int(row.athletes_entered or 0))
-        singles_allowed = compute_single_room_entitlement(officials)
-        usage = assignment_map.get((row.nation_code, row.discipline, row.gender), {'assignedOfficials': 0, 'singleRoomsUsed': 0})
-
-        results.append({
-            'nationCode': row.nation_code,
-            'discipline': row.discipline,
-            'gender': row.gender,
-            'athletesEntered': int(row.athletes_entered or 0),
-            'officialQuota': officials,
-            'singleRoomsAllowed': singles_allowed,
-            'assignedOfficials': usage['assignedOfficials'],
-            'singleRoomsUsed': usage['singleRoomsUsed'],
+        rt_id = str(inv.room_type.id)
+        rt_entry = hotel_map[hid]['roomTypes'].setdefault(rt_id, {
+            'roomType': inv.room_type.to_dict(),
+            'inventoryRooms': 0,
+            'inventoryBeds': 0,
+            'occupiedBeds': 0
         })
+        rt_entry['inventoryRooms'] += inv.room_count
+        rt_entry['inventoryBeds'] += inv.room_count * inv.room_type.max_persons
 
-    return jsonify(results)
+    for a in assignment_query.all():
+        hid = a.hotel_id
+        if hid not in hotel_map:
+            hotel_map[hid] = {
+                'hotel': {'id': str(a.hotel.id), 'name': a.hotel.name, 'location': a.hotel.location, 'region': a.hotel.region},
+                'roomTypes': {},
+                'totals': {'inventoryRooms': 0, 'inventoryBeds': 0, 'occupiedRooms': 0, 'occupiedBeds': 0}
+            }
+
+        rt_id = str(a.room_type.id)
+        rt_entry = hotel_map[hid]['roomTypes'].setdefault(rt_id, {
+            'roomType': a.room_type.to_dict(),
+            'inventoryRooms': 0,
+            'inventoryBeds': 0,
+            'occupiedBeds': 0
+        })
+        rt_entry['occupiedBeds'] += 1
+
+    result = []
+    for hdata in hotel_map.values():
+        room_types = []
+        for rt in hdata['roomTypes'].values():
+            occ_rooms = (rt['occupiedBeds'] + rt['roomType']['maxPersons'] - 1) // rt['roomType']['maxPersons'] if rt['roomType']['maxPersons'] > 0 else 0
+            rt['occupiedRooms'] = occ_rooms
+            rt['remainingRooms'] = max(0, rt['inventoryRooms'] - occ_rooms)
+            rt['remainingBeds'] = max(0, rt['inventoryBeds'] - rt['occupiedBeds'])
+            room_types.append(rt)
+
+            hdata['totals']['inventoryRooms'] += rt['inventoryRooms']
+            hdata['totals']['inventoryBeds'] += rt['inventoryBeds']
+            hdata['totals']['occupiedRooms'] += occ_rooms
+            hdata['totals']['occupiedBeds'] += rt['occupiedBeds']
+
+        hdata['totals']['remainingRooms'] = max(0, hdata['totals']['inventoryRooms'] - hdata['totals']['occupiedRooms'])
+        hdata['totals']['remainingBeds'] = max(0, hdata['totals']['inventoryBeds'] - hdata['totals']['occupiedBeds'])
+        hdata['roomTypes'] = room_types
+        result.append(hdata)
+
+    return jsonify(result)
+
+
+@app.route('/api/hotels/<int:hotel_id>/reservations', methods=['GET'])
+def get_hotel_reservations(hotel_id):
+    room_type_id = request.args.get('room_type_id', type=int)
+    nation = request.args.get('nation')
+    discipline = request.args.get('discipline')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    start_date = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+    end_date = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
+
+    q = RoomAssignment.query.join(Athlete).join(RoomType).filter(RoomAssignment.hotel_id == hotel_id)
+    if room_type_id:
+        q = q.filter(RoomAssignment.room_type_id == room_type_id)
+    if nation:
+        q = q.filter(Athlete.nation_code == nation)
+    if discipline:
+        q = q.filter(Athlete.discipline == discipline)
+    if start_date and end_date:
+        q = q.filter(RoomAssignment.check_in_date <= end_date, RoomAssignment.check_out_date >= start_date)
+
+    assignments = q.order_by(RoomAssignment.check_in_date.asc().nullslast()).all()
+    rows = []
+    for a in assignments:
+        rows.append({
+            'assignmentId': str(a.id),
+            'roomNumber': a.room_number,
+            'roomType': a.room_type.to_dict(),
+            'occupancy': 2 if a.shared_with else 1,
+            'guestName': f"{a.athlete.firstname} {a.athlete.lastname}",
+            'sharedWithName': f"{a.shared_with.firstname} {a.shared_with.lastname}" if a.shared_with else None,
+            'nationCode': a.athlete.nation_code,
+            'discipline': a.athlete.discipline,
+            'checkInDate': a.check_in_date.isoformat() if a.check_in_date else None,
+            'checkOutDate': a.check_out_date.isoformat() if a.check_out_date else None,
+            'specialNotes': a.athlete.special_meal
+        })
+    return jsonify(rows)
+
 # Statistics & Analytics
 @app.route('/api/analytics/room-availability', methods=['GET'])
 def get_room_availability():
