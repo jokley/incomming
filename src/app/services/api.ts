@@ -49,7 +49,22 @@ class ApiService {
       throw new Error(`API Error: ${response.statusText}`);
     }
 
-    return response.json();
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const bodyText = await response.text();
+
+    if (!bodyText) {
+      return undefined as T;
+    }
+
+    if (contentType.includes('application/json')) {
+      return JSON.parse(bodyText) as T;
+    }
+
+    return bodyText as unknown as T;
   }
 
   // ============================================================================
