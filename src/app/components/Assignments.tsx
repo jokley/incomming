@@ -1,19 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Save, Loader2, Trash2, Users, Info } from 'lucide-react';
 import { api } from '../services/api';
 import { Athlete, Hotel, RoomType, RoomAssignment } from '../types';
 import { OfficialQuotaUsage, getComplianceStatus } from '../services/fisRules';
+
+type BookingType = 'single' | 'double';
+
+type AssignmentGroup = {
+  key: string;
+  assignment: RoomAssignment;
+  members: Athlete[];
+};
 
 export function Assignments() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
-  const [selectedAthlete, setSelectedAthlete] = useState<string>('');
+  const [bookingType, setBookingType] = useState<BookingType>('single');
+  const [occupant1Id, setOccupant1Id] = useState<string>('');
+  const [occupant2Id, setOccupant2Id] = useState<string>('');
   const [selectedHotel, setSelectedHotel] = useState<string>('');
   const [selectedRoomType, setSelectedRoomType] = useState<string>('');
-  const [selectedPartner, setSelectedPartner] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quotaUsage, setQuotaUsage] = useState<OfficialQuotaUsage[]>([]);
 
@@ -45,429 +55,201 @@ export function Assignments() {
     }
   };
 
-  // Get assigned athlete IDs
   const assignedAthleteIds = new Set(assignments.map(a => a.athlete.id));
   const unassignedAthletes = athletes.filter(a => !assignedAthleteIds.has(a.id));
 
-  // Find potential room partners for selected athlete
-  const selectedAthleteData = athletes.find(a => a.id === selectedAthlete);
-  const normalizeName = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[.,]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  const occupant1 = athletes.find(a => a.id === occupant1Id);
+  const occupant2 = athletes.find(a => a.id === occupant2Id);
+  const selectedHotelData = hotels.find(h => h.id === selectedHotel);
+  const selectedRoomTypeData = roomTypes.find(rt => rt.id === selectedRoomType);
 
-  const matchesSharedWithName = (candidate: Athlete, sharedWithName: string) => {
-    const target = normalizeName(sharedWithName);
-    const first = normalizeName(candidate.firstname);
-    const last = normalizeName(candidate.lastname);
-    if (!target || !first || !last) return false;
-    return target.includes(first) && target.includes(last);
-  };
+  const assignmentGroups = useMemo<AssignmentGroup[]>(() => {
+    const grouped = new Map<string, AssignmentGroup>();
 
-  const potentialPartners = selectedAthleteData
-    ? (() => {
-        const eligible = athletes.filter(
-          a => a.id !== selectedAthlete && !assignedAthleteIds.has(a.id)
-        );
+    assignments.forEach((assignment) => {
+      const partnerId = assignment.sharedWith?.id;
+      const groupKey = partnerId
+        ? [assignment.athlete.id, partnerId].sort().join('-')
+        : `single-${assignment.athlete.id}-${assignment.id}`;
 
-        const requested = selectedAthleteData.sharedWithName
-          ? eligible.filter(a => matchesSharedWithName(a, selectedAthleteData.sharedWithName!))
-          : [];
+      if (!grouped.has(groupKey)) {
+        const members = [assignment.athlete, ...(assignment.sharedWith ? [assignment.sharedWith] : [])]
+          .filter((member, index, arr) => arr.findIndex(a => a.id === member.id) === index);
+        grouped.set(groupKey, { key: groupKey, assignment, members });
+      }
+    });
 
-        const sameNation = eligible.filter(a => a.nationCode === selectedAthleteData.nationCode);
+    return Array.from(grouped.values());
+  }, [assignments]);
 
-        const merged = [...requested, ...sameNation.filter(a => !requested.some(r => r.id === a.id))];
-        return merged;
-      })()
-    : [];
+  const roomBookingOutcome = useMemo(() => {
+    const issues: string[] = [];
+    const participants = [occupant1, bookingType === 'double' ? occupant2 : undefined].filter(Boolean) as Athlete[];
 
+    if (!occupant1) issues.push('Belegung 1 fehlt');
+    if (bookingType === 'double' && !occupant2) issues.push('Belegung 2 fehlt');
+    if (occupant1Id && occupant1Id === occupant2Id) issues.push('Athlet darf nicht doppelt gewählt werden');
 
+    if (participants.length > 1) {
+      const genders = participants.map(p => p.gender || p.forGender).filter(Boolean);
+      if (genders.length > 1 && new Set(genders).size > 1) issues.push('Gender-Check: gemischte Belegung');
+    }
 
-  const badgeClassForStatus = (status: string) => {
-    if (status === 'ok') return 'bg-green-100 text-green-800 border-green-300';
-    if (status === 'over') return 'bg-red-100 text-red-800 border-red-300';
-    return 'bg-amber-100 text-amber-800 border-amber-300';
-  };
-  const handleAssignment = async () => {
-    if (!selectedAthlete || !selectedHotel || !selectedRoomType) {
-      setError('Bitte füllen Sie alle Pflichtfelder aus');
+    if (selectedHotelData && selectedRoomTypeData) {
+      const inventory = selectedHotelData.roomInventories?.find(inv => inv.roomType.id === selectedRoomTypeData.id);
+      const used = assignments.filter(
+        a => a.hotel.id === selectedHotelData.id && a.roomType.id === selectedRoomTypeData.id
+      ).length;
+      if (inventory && used >= inventory.roomCount) issues.push('Quota-Check: keine freien Kontingente mehr');
+    }
+
+    const overlapParticipant = participants.find(participant =>
+      assignments.some(a =>
+        a.athlete.id === participant.id || a.sharedWith?.id === participant.id
+      )
+    );
+    if (overlapParticipant) issues.push(`Overlap-Check: ${overlapParticipant.firstname} ist bereits zugewiesen`);
+
+    return {
+      participants,
+      issues,
+      canSubmit:
+        !!occupant1 &&
+        !!selectedHotel &&
+        !!selectedRoomType &&
+        (bookingType === 'single' || !!occupant2) &&
+        issues.length === 0,
+    };
+  }, [bookingType, occupant1, occupant1Id, occupant2, occupant2Id, selectedHotel, selectedHotelData, selectedRoomType, selectedRoomTypeData, assignments]);
+
+  const handleBookingSubmit = async () => {
+    if (!roomBookingOutcome.canSubmit || !occupant1) {
+      setError('Bitte alle Pflichtfelder ausfüllen und Rule-Checks erfüllen');
       return;
     }
 
     try {
-      if (requiresStrictPairing && selectedPartner) {
-        const partner = athletes.find(a => a.id === selectedPartner);
-        if (!selectedGender || !partner || normalizedGender(partner) !== selectedGender) {
-          setPartnerHint('Partner muss gender-kompatibel sein (gleiche bekannte Gender-Kategorie).');
-          return;
-        }
-      }
-      const athlete = athletes.find(a => a.id === selectedAthlete);
+      setSubmitting(true);
+      setError(null);
       await api.createRoomAssignment({
-        athleteId: selectedAthlete,
+        athleteId: occupant1.id,
         hotelId: selectedHotel,
         roomTypeId: selectedRoomType,
-        checkInDate: athlete?.arrivalDate,
-        checkOutDate: athlete?.departureDate,
-        sharedWithAthleteId: selectedPartner || undefined,
+        checkInDate: occupant1.arrivalDate || undefined,
+        checkOutDate: occupant1.departureDate || undefined,
+        sharedWithAthleteId: bookingType === 'double' ? occupant2?.id : undefined,
       });
 
-      await loadData();
-      setSelectedAthlete('');
+      const freshAssignments = await api.getRoomAssignments();
+      setAssignments(freshAssignments);
+
+      setBookingType('single');
+      setOccupant1Id('');
+      setOccupant2Id('');
       setSelectedHotel('');
       setSelectedRoomType('');
-      setSelectedPartner('');
-      setError(null);
-      setPartnerHint(null);
     } catch (err) {
-      const apiError = err as { message?: string; reasonCode?: string };
-      const reason = apiError.reasonCode ? ` (${apiError.reasonCode})` : '';
-      setError(apiError.message ? `${apiError.message}${reason}` : 'Fehler beim Zuweisen des Athleten');
+      setError('Fehler beim Buchen');
       console.error(err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleRemoveAssignment = async (assignmentId: string) => {
-    if (!confirm('Zuweisung wirklich entfernen?')) return;
-
+    if (!confirm('Buchung wirklich entfernen?')) return;
     try {
       await api.deleteRoomAssignment(assignmentId);
-      await loadData();
+      setAssignments(prev => prev.filter(a => a.id !== assignmentId));
     } catch (err) {
-      setError('Fehler beim Entfernen der Zuweisung');
+      setError('Fehler beim Entfernen der Buchung');
       console.error(err);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  // Get EZ and DZ room types
-  const ezRoomType = roomTypes.find(rt => rt.maxPersons === 1);
-  const dzRoomType = roomTypes.find(rt => rt.maxPersons === 2);
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900">Hotelzuweisungen</h2>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {error}
-          <button onClick={() => setError(null)} className="ml-2 underline">Schließen</button>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Neue Zuweisung</h3>
+      <div className="bg-white rounded-lg shadow p-6 space-y-4">
+        <h3 className="text-lg font-semibold">Room Booking Form</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Athlet auswählen *
-            </label>
-            <select
-              value={selectedAthlete}
-              onChange={(e) => {
-                setSelectedAthlete(e.target.value);
-                setSelectedPartner(''); // Reset partner when athlete changes
-                setPartnerHint(null);
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
+            <label className="block text-sm font-medium text-gray-700 mb-2">Booking type *</label>
+            <select value={bookingType} onChange={(e) => setBookingType(e.target.value as BookingType)} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+              <option value="single">Single</option>
+              <option value="double">Double</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Occupant slot 1 *</label>
+            <select value={occupant1Id} onChange={(e) => setOccupant1Id(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
               <option value="">-- Athlet wählen --</option>
-              {unassignedAthletes.map(athlete => (
-                <option key={athlete.id} value={athlete.id}>
-                  {athlete.firstname} {athlete.lastname} ({athlete.nationCode})
-                </option>
-              ))}
+              {unassignedAthletes.map(a => <option key={a.id} value={a.id}>{a.firstname} {a.lastname}</option>)}
             </select>
-            {selectedAthleteData?.sharedWithName && (
-              <p className="text-xs text-blue-600 mt-1">
-                <Info className="w-3 h-3 inline mr-1" />
-                Wunsch: {selectedAthleteData.sharedWithName}
-              </p>
-            )}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Hotel *
-            </label>
-            <select
-              value={selectedHotel}
-              onChange={(e) => setSelectedHotel(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">-- Hotel wählen --</option>
-              {hotels.map(hotel => {
-                const totalRooms = hotel.roomInventories?.reduce((sum, inv) => sum + inv.roomCount, 0) || 0;
-                return (
-                  <option key={hotel.id} value={hotel.id}>
-                    {hotel.name} ({hotel.location})
-                  </option>
-                );
-              })}
+            <label className="block text-sm font-medium text-gray-700 mb-2">Occupant slot 2 {bookingType === 'double' ? '*' : '(optional)'}</label>
+            <select value={occupant2Id} disabled={bookingType !== 'double'} onChange={(e) => setOccupant2Id(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100">
+              <option value="">-- Athlet wählen --</option>
+              {unassignedAthletes.filter(a => a.id !== occupant1Id).map(a => <option key={a.id} value={a.id}>{a.firstname} {a.lastname}</option>)}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Zimmertyp *
-            </label>
-            <select
-              value={selectedRoomType}
-              onChange={(e) => setSelectedRoomType(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">-- Typ wählen --</option>
-              {ezRoomType && (
-                <option value={ezRoomType.id}>Einzelzimmer (EZ)</option>
-              )}
-              {dzRoomType && (
-                <option value={dzRoomType.id}>Doppelzimmer (DZ)</option>
-              )}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Hotel *</label>
+            <select value={selectedHotel} onChange={(e) => setSelectedHotel(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="">-- Hotel wählen --</option>{hotels.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Zimmerpartner (optional)
-            </label>
-            <select
-              value={selectedPartner}
-              onChange={(e) => setSelectedPartner(e.target.value)}
-              disabled={!selectedAthlete || selectedRoomType === ezRoomType?.id}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-            >
-              <option value="">-- Kein Partner --</option>
-              {partnerOptions.map(athlete => (
-                <option key={athlete.id} value={athlete.id}>
-                  {athlete.firstname} {athlete.lastname}
-                </option>
-              ))}
-            </select>
-            {excludedPartnerReasons.length > 0 && (
-              <p className="text-xs text-amber-700 mt-1">
-                Ausgeschlossen: {excludedPartnerReasons.slice(0, 2).join(' • ')}
-              </p>
-            )}
-            {partnerHint && <p className="text-xs text-red-700 mt-1">{partnerHint}</p>}
+            <label className="block text-sm font-medium text-gray-700 mb-2">Room type *</label>
+            <select value={selectedRoomType} onChange={(e) => setSelectedRoomType(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="">-- Typ wählen --</option>{roomTypes.map(rt => <option key={rt.id} value={rt.id}>{rt.name}</option>)}</select>
           </div>
-
-          <button
-            onClick={handleAssignment}
-            disabled={!selectedAthlete || !selectedHotel || !selectedRoomType}
-            className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-          >
-            <Save className="w-5 h-5 mr-2" />
-            Zuweisen
-          </button>
         </div>
 
-        {selectedAthleteData && (
-          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="font-medium">
-                {selectedAthleteData.firstname} {selectedAthleteData.lastname}
-              </span>
-              <span className="text-gray-500">
-                {selectedAthleteData.nationCode}{selectedAthleteData.discipline ? ` • ${selectedAthleteData.discipline}` : ''}
-              </span>
-            </div>
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div>
-                <span className="text-gray-500">Anreise:</span>{' '}
-                {selectedAthleteData.arrivalDate ? new Date(selectedAthleteData.arrivalDate).toLocaleDateString('de-DE') : '-'}
-              </div>
-              <div>
-                <span className="text-gray-500">Abreise:</span>{' '}
-                {selectedAthleteData.departureDate ? new Date(selectedAthleteData.departureDate).toLocaleDateString('de-DE') : '-'}
-              </div>
-              <div>
-                <span className="text-gray-500">Präferenz:</span>{' '}
-                {selectedAthleteData.roomType || '-'}
-                {selectedAthleteData.sharedWithName ? ` (mit ${selectedAthleteData.sharedWithName})` : ''}
-              </div>
-            </div>
-            {(selectedAthleteData.missingFromLatestAthletesImport || selectedAthleteData.missingFromLatestRoomlistImport) && (
-              <div className="mt-2 text-xs">
-                {selectedAthleteData.missingFromLatestAthletesImport && (
-                  <span className="mr-2 px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-                    Nicht in letzter Athletenliste
-                  </span>
-                )}
-                {selectedAthleteData.missingFromLatestRoomlistImport && (
-                  <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
-                    Nicht in letzter Roomlist
-                  </span>
-                )}
-              </div>
+        <div className="border rounded-lg p-4 bg-blue-50">
+          <h4 className="font-semibold text-gray-900 mb-2">Live Preview</h4>
+          <div className="text-sm text-gray-700 grid md:grid-cols-2 gap-2">
+            <div>Hotel: {selectedHotelData?.name || '-'}</div>
+            <div>Room type: {selectedRoomTypeData?.name || '-'}</div>
+            <div>Date span: {occupant1?.arrivalDate ? new Date(occupant1.arrivalDate).toLocaleDateString('de-DE') : '-'} → {occupant1?.departureDate ? new Date(occupant1.departureDate).toLocaleDateString('de-DE') : '-'}</div>
+            <div>Occupants: {roomBookingOutcome.participants.map(p => `${p.firstname} ${p.lastname}`).join(' + ') || '-'}</div>
+          </div>
+          <div className="mt-2 text-sm">
+            <span className="font-medium">Rule checks:</span>
+            {roomBookingOutcome.issues.length === 0 ? <span className="text-green-700"> OK (gender, quota, overlap)</span> : (
+              <ul className="list-disc ml-5 text-red-700">
+                {roomBookingOutcome.issues.map(issue => <li key={issue}>{issue}</li>)}
+              </ul>
             )}
           </div>
-        )}
+        </div>
+
+        <button onClick={handleBookingSubmit} disabled={!roomBookingOutcome.canSubmit || submitting} className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-300">
+          {submitting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Save className="w-5 h-5 mr-2" />}
+          {bookingType === 'double' ? 'Book both now' : 'Book now'}
+        </button>
       </div>
 
-      {/* Assignments by Hotel */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 border-b">
-          <h3 className="text-lg font-semibold">
-            Zuweisungen nach Hotel ({assignments.length})
-          </h3>
-        </div>
-        <div className="divide-y divide-gray-200">
-          {hotels.map(hotel => {
-            const hotelAssignments = assignments.filter(a => a.hotel.id === hotel.id);
-            if (hotelAssignments.length === 0) return null;
-
-            return (
-              <div key={hotel.id} className="p-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
-                  <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-                  {hotel.name} ({hotel.location}, {hotel.region})
-                  <span className="ml-2 text-sm text-gray-500">
-                    {hotelAssignments.length} Athleten
-                  </span>
-                </h4>
-                <div className="overflow-x-auto mb-4">
-                  <table className="min-w-full text-xs border border-gray-200 rounded">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="text-left px-2 py-1">Team</th>
-                        <th className="text-left px-2 py-1">Official Quota</th>
-                        <th className="text-left px-2 py-1">Assigned Officials</th>
-                        <th className="text-left px-2 py-1">Single Rooms</th>
-                        <th className="text-left px-2 py-1">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hotelAssignments.reduce((acc, assignment) => {
-                        const key = `${assignment.athlete.nationCode}|${assignment.athlete.discipline || ''}|${assignment.athlete.forGender || assignment.athlete.gender || 'U'}`;
-                        if (!acc[key]) {
-                          acc[key] = { nationCode: assignment.athlete.nationCode, discipline: assignment.athlete.discipline || '', gender: assignment.athlete.forGender || assignment.athlete.gender || 'U' };
-                        }
-                        return acc;
-                      }, {} as Record<string, { nationCode: string; discipline: string; gender: string }> ) && Object.values(hotelAssignments.reduce((acc, assignment) => {
-                        const key = `${assignment.athlete.nationCode}|${assignment.athlete.discipline || ''}|${assignment.athlete.forGender || assignment.athlete.gender || 'U'}`;
-                        if (!acc[key]) {
-                          acc[key] = { nationCode: assignment.athlete.nationCode, discipline: assignment.athlete.discipline || '', gender: assignment.athlete.forGender || assignment.athlete.gender || 'U' };
-                        }
-                        return acc;
-                      }, {} as Record<string, { nationCode: string; discipline: string; gender: string }> )).map((team) => {
-                        const quota = quotaUsage.find(q => q.nationCode === team.nationCode && q.discipline === team.discipline && q.gender === team.gender);
-                        const status = quota ? getComplianceStatus(quota.assignedOfficials, quota.officialQuota) : 'missing';
-                        return (
-                          <tr key={`${team.nationCode}-${team.discipline}-${team.gender}`} className="border-t">
-                            <td className="px-2 py-1">{team.nationCode} • {team.discipline || 'N/A'} • {team.gender}</td>
-                            <td className="px-2 py-1">{quota?.officialQuota ?? '-'}</td>
-                            <td className="px-2 py-1">{quota?.assignedOfficials ?? 0}</td>
-                            <td className="px-2 py-1">{quota ? `${quota.singleRoomsUsed} / ${quota.singleRoomsAllowed}` : '-'}</td>
-                            <td className="px-2 py-1"><span className={`px-2 py-0.5 rounded-full border ${badgeClassForStatus(status)}`}>{status.toUpperCase()}</span></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">Current booking list ({assignmentGroups.length})</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {assignmentGroups.map(group => (
+            <div key={group.key} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="font-medium">{group.assignment.hotel.name} • {group.assignment.roomType.name}</p>
+                  <p className="text-xs text-gray-500">{group.members.map(m => `${m.firstname} ${m.lastname}`).join(' + ')}</p>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {hotelAssignments.map(assignment => (
-                    <div
-                      key={assignment.id}
-                      className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">
-                          {assignment.athlete.firstname} {assignment.athlete.lastname}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {assignment.athlete.nationCode} • {assignment.athlete.discipline || 'N/A'}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {assignment.athlete.arrivalDate ? new Date(assignment.athlete.arrivalDate).toLocaleDateString('de-DE') : '-'}
-                          {' '}→{' '}
-                          {assignment.athlete.departureDate ? new Date(assignment.athlete.departureDate).toLocaleDateString('de-DE') : '-'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            assignment.roomType.maxPersons === 1
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-purple-100 text-purple-800'
-                          }`}>
-                            {assignment.roomType.name}
-                          </span>
-                          {assignment.sharedWith && (
-                            <span className="text-xs text-gray-600 flex items-center">
-                              <Users className="w-3 h-3 mr-1" />
-                              mit {assignment.sharedWith.firstname} {assignment.sharedWith.lastname}
-                            </span>
-                          )}
-                        </div>
-                        {assignment.athlete.sharedWithName && !assignment.sharedWith && (
-                          <p className="text-xs text-orange-600 mt-1">
-                            <Info className="w-3 h-3 inline mr-1" />
-                            Wunsch: {assignment.athlete.sharedWithName}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveAssignment(assignment.id)}
-                        className="text-red-600 hover:text-red-800 ml-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <button onClick={() => handleRemoveAssignment(group.assignment.id)} className="text-red-600 hover:text-red-800">
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
-            );
-          })}
-
-          {assignments.length === 0 && (
-            <div className="p-12 text-center text-gray-500">
-              Noch keine Zuweisungen vorhanden. Weisen Sie Athleten zu Hotels zu.
             </div>
-          )}
+          ))}
         </div>
       </div>
-
-      {/* Unassigned Athletes */}
-      {unassignedAthletes.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <h4 className="text-md font-semibold text-yellow-800 mb-3 flex items-center">
-            <Info className="w-5 h-5 mr-2" />
-            Nicht zugewiesene Athleten ({unassignedAthletes.length})
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {unassignedAthletes.map(athlete => (
-              <div key={athlete.id} className="p-3 bg-white rounded-lg border border-yellow-300">
-                <p className="font-medium text-gray-900">
-                  {athlete.firstname} {athlete.lastname}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {athlete.nationCode} • {athlete.discipline || 'N/A'}
-                </p>
-                {athlete.sharedWithName && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    <Users className="w-3 h-3 inline mr-1" />
-                    Wunsch: {athlete.sharedWithName}
-                  </p>
-                )}
-                {athlete.roomType && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Präferenz: {athlete.roomType}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
