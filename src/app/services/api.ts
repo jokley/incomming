@@ -5,7 +5,7 @@ import {
   Event,
   EventRoomDemand,
   Athlete,
-  RoomAssignment,
+  RoomBooking,
   RoomAvailability,
   HotelCapacityOverview,
   HotelReservationRow
@@ -20,7 +20,9 @@ import {
   mockRoomAvailability
 } from '../data/mockData';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// In production we want to default to same-origin (`/api`) so deployments work without env vars.
+// For local dev you can set: VITE_API_URL=http://localhost:5000/api
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // USE MOCK DATA - Set to true for offline testing
 const USE_MOCK_DATA = false;
@@ -50,9 +52,27 @@ class ApiService {
 
     const contentType = response.headers.get('content-type') || '';
     const bodyText = await response.text();
-    const body = bodyText && contentType.includes('application/json')
-      ? JSON.parse(bodyText)
-      : bodyText;
+
+    const looksLikeJson = (() => {
+      const trimmed = bodyText.trim();
+      return (
+        contentType.includes('application/json') ||
+        trimmed.startsWith('{') ||
+        trimmed.startsWith('[') ||
+        trimmed === 'null' ||
+        trimmed === 'true' ||
+        trimmed === 'false'
+      );
+    })();
+
+    let body: unknown = bodyText;
+    if (bodyText && looksLikeJson) {
+      try {
+        body = JSON.parse(bodyText);
+      } catch {
+        body = bodyText;
+      }
+    }
 
     if (!response.ok) {
       if (typeof body === 'object' && body && 'message' in body) {

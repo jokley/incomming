@@ -40,6 +40,16 @@ export default defineConfig({
     port: 5173,
     allowedHosts: [
       'incoming.jokley.at'
-    ]
+    ],
+    // Local dev convenience:
+    // - Frontend runs on :5173
+    // - Backend runs on :5000
+    // Proxy `/api/*` to the backend so the app can use same-origin `/api` URLs.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+    },
   }
 })

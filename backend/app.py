@@ -180,6 +180,9 @@ with app.app_context():
 # ============================================================================
 
 @app.route('/api/import/excel', methods=['POST'])
+@app.route('/api/import/excel/', methods=['POST'])
+@app.route('/import/excel', methods=['POST'])
+@app.route('/import/excel/', methods=['POST'])
 def import_excel():
     """Import athletes and roomlist from Excel file"""
     if 'file' not in request.files:
@@ -468,12 +471,18 @@ def import_athletes(lines, section_info, end_line):
 
 # Room Types - CRUD
 @app.route('/api/room-types', methods=['GET'])
+@app.route('/api/room-types/', methods=['GET'])
+@app.route('/room-types', methods=['GET'])
+@app.route('/room-types/', methods=['GET'])
 def get_room_types():
     room_types = RoomType.query.all()
     return jsonify([rt.to_dict() for rt in room_types])
 
 
 @app.route('/api/room-types', methods=['POST'])
+@app.route('/api/room-types/', methods=['POST'])
+@app.route('/room-types', methods=['POST'])
+@app.route('/room-types/', methods=['POST'])
 def create_room_type():
     data = request.json
     room_type = RoomType(
@@ -486,6 +495,9 @@ def create_room_type():
 
 
 @app.route('/api/room-types/<int:room_type_id>', methods=['PUT'])
+@app.route('/api/room-types/<int:room_type_id>/', methods=['PUT'])
+@app.route('/room-types/<int:room_type_id>', methods=['PUT'])
+@app.route('/room-types/<int:room_type_id>/', methods=['PUT'])
 def update_room_type(room_type_id):
     room_type = RoomType.query.get_or_404(room_type_id)
     data = request.json
@@ -500,6 +512,9 @@ def update_room_type(room_type_id):
 
 
 @app.route('/api/room-types/<int:room_type_id>', methods=['DELETE'])
+@app.route('/api/room-types/<int:room_type_id>/', methods=['DELETE'])
+@app.route('/room-types/<int:room_type_id>', methods=['DELETE'])
+@app.route('/room-types/<int:room_type_id>/', methods=['DELETE'])
 def delete_room_type(room_type_id):
     room_type = RoomType.query.get_or_404(room_type_id)
     db.session.delete(room_type)
@@ -509,18 +524,27 @@ def delete_room_type(room_type_id):
 
 # Hotels - CRUD
 @app.route('/api/hotels', methods=['GET'])
+@app.route('/api/hotels/', methods=['GET'])
+@app.route('/hotels', methods=['GET'])
+@app.route('/hotels/', methods=['GET'])
 def get_hotels():
     hotels = Hotel.query.all()
     return jsonify([h.to_dict() for h in hotels])
 
 
 @app.route('/api/hotels/<int:hotel_id>', methods=['GET'])
+@app.route('/api/hotels/<int:hotel_id>/', methods=['GET'])
+@app.route('/hotels/<int:hotel_id>', methods=['GET'])
+@app.route('/hotels/<int:hotel_id>/', methods=['GET'])
 def get_hotel(hotel_id):
     hotel = Hotel.query.get_or_404(hotel_id)
     return jsonify(hotel.to_dict())
 
 
 @app.route('/api/hotels', methods=['POST'])
+@app.route('/api/hotels/', methods=['POST'])
+@app.route('/hotels', methods=['POST'])
+@app.route('/hotels/', methods=['POST'])
 def create_hotel():
     data = request.json
     hotel = Hotel(
@@ -534,6 +558,9 @@ def create_hotel():
 
 
 @app.route('/api/hotels/<int:hotel_id>', methods=['PUT'])
+@app.route('/api/hotels/<int:hotel_id>/', methods=['PUT'])
+@app.route('/hotels/<int:hotel_id>', methods=['PUT'])
+@app.route('/hotels/<int:hotel_id>/', methods=['PUT'])
 def update_hotel(hotel_id):
     hotel = Hotel.query.get_or_404(hotel_id)
     data = request.json
@@ -550,6 +577,9 @@ def update_hotel(hotel_id):
 
 
 @app.route('/api/hotels/<int:hotel_id>', methods=['DELETE'])
+@app.route('/api/hotels/<int:hotel_id>/', methods=['DELETE'])
+@app.route('/hotels/<int:hotel_id>', methods=['DELETE'])
+@app.route('/hotels/<int:hotel_id>/', methods=['DELETE'])
 def delete_hotel(hotel_id):
     hotel = Hotel.query.get_or_404(hotel_id)
     db.session.delete(hotel)
@@ -559,6 +589,9 @@ def delete_hotel(hotel_id):
 
 # Hotel Room Inventory
 @app.route('/api/hotels/<int:hotel_id>/inventory', methods=['POST'])
+@app.route('/api/hotels/<int:hotel_id>/inventory/', methods=['POST'])
+@app.route('/hotels/<int:hotel_id>/inventory', methods=['POST'])
+@app.route('/hotels/<int:hotel_id>/inventory/', methods=['POST'])
 def add_hotel_inventory(hotel_id):
     hotel = Hotel.query.get_or_404(hotel_id)
     data = request.json
@@ -578,6 +611,9 @@ def add_hotel_inventory(hotel_id):
 
 
 @app.route('/api/hotels/<int:hotel_id>/inventory/<int:inventory_id>', methods=['DELETE'])
+@app.route('/api/hotels/<int:hotel_id>/inventory/<int:inventory_id>/', methods=['DELETE'])
+@app.route('/hotels/<int:hotel_id>/inventory/<int:inventory_id>', methods=['DELETE'])
+@app.route('/hotels/<int:hotel_id>/inventory/<int:inventory_id>/', methods=['DELETE'])
 def delete_hotel_inventory(hotel_id, inventory_id):
     inventory = HotelRoomInventory.query.filter_by(
         id=inventory_id,
@@ -661,6 +697,9 @@ def delete_event_demand(event_id, demand_id):
 
 # Athletes
 @app.route('/api/athletes', methods=['GET'])
+@app.route('/api/athletes/', methods=['GET'])
+@app.route('/athletes', methods=['GET'])
+@app.route('/athletes/', methods=['GET'])
 def get_athletes():
     athletes = Athlete.query.all()
 
@@ -702,6 +741,9 @@ def get_athletes():
 
 
 @app.route('/api/athletes', methods=['POST'])
+@app.route('/api/athletes/', methods=['POST'])
+@app.route('/athletes', methods=['POST'])
+@app.route('/athletes/', methods=['POST'])
 def create_athlete():
     data = request.json
     athlete = Athlete(
@@ -728,6 +770,8 @@ def get_grouped_room_bookings():
 
 @app.route('/api/room-assignments', methods=['GET'])
 @app.route('/api/room-assignments/', methods=['GET'])
+@app.route('/room-assignments', methods=['GET'])
+@app.route('/room-assignments/', methods=['GET'])
 def get_room_assignments():
     # Backward-compatible alias. Canonical read endpoint is /api/room-bookings/grouped.
     return _get_grouped_room_bookings_response()
@@ -769,6 +813,9 @@ def get_debug_routes():
 
 
 @app.route('/api/room-assignments', methods=['POST'])
+@app.route('/api/room-assignments/', methods=['POST'])
+@app.route('/room-assignments', methods=['POST'])
+@app.route('/room-assignments/', methods=['POST'])
 def create_room_assignment():
     data = request.json
     athlete_ids = data.get('athleteIds', [])
@@ -806,6 +853,9 @@ def create_room_assignment():
 
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['PUT'])
+@app.route('/api/room-assignments/<int:assignment_id>/', methods=['PUT'])
+@app.route('/room-assignments/<int:assignment_id>', methods=['PUT'])
+@app.route('/room-assignments/<int:assignment_id>/', methods=['PUT'])
 def update_room_assignment(assignment_id):
     booking = RoomBooking.query.get_or_404(assignment_id)
     data = request.json
@@ -838,6 +888,9 @@ def update_room_assignment(assignment_id):
 
 
 @app.route('/api/room-assignments/<int:assignment_id>', methods=['DELETE'])
+@app.route('/api/room-assignments/<int:assignment_id>/', methods=['DELETE'])
+@app.route('/room-assignments/<int:assignment_id>', methods=['DELETE'])
+@app.route('/room-assignments/<int:assignment_id>/', methods=['DELETE'])
 def delete_room_assignment(assignment_id):
     booking = RoomBooking.query.get_or_404(assignment_id)
     db.session.delete(booking)

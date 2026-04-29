@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import datetime
 import unicodedata
 
-from models import db, Athlete, RoomAssignment, Hotel, RoomType, ImportRun
+from models import db, Athlete, RoomAssignment, Hotel, RoomType, HotelRoomInventory, ImportRun
 
 
 # -------------------------
@@ -28,6 +28,23 @@ def normalize_string(s):
 
 
 def normalize_columns(df):
+    # If Excel has metadata rows above the real header, pandas may produce only
+    # "Unnamed: X" columns. In that case, promote the first row to header if it
+    # looks like a header row.
+    if len(df.columns) > 0:
+        unnamed_cols = [str(c).startswith('Unnamed:') for c in df.columns]
+        if all(unnamed_cols):
+            candidate = [normalize_whitespace(v) for v in df.iloc[0].tolist()]
+            candidate_keys = {normalize_string(v) for v in candidate if v}
+            header_markers = {
+                'hotel', 'zimmertyp', 'von', 'bis', 'zimmer', 'ort', 'region', 'hp', 'sr',
+                'maxpersonen', 'zimmer', 'zimmertypid', 'hotelid', 'venueid', 'venue'
+            }
+            if candidate_keys.intersection(header_markers):
+                df = df.copy()
+                df.columns = candidate
+                df = df.iloc[1:].reset_index(drop=True)
+
     def _col_key(name: str) -> str:
         if name is None:
             return ''
@@ -40,6 +57,20 @@ def normalize_columns(df):
         return ''.join(ch for ch in s if ch.isalnum())
 
     aliases = {
+        # German hotel/inventory + room-type sheets
+        'hotel': 'Hotel',
+        'zimmertyp': 'ZimmerTyp',
+        'von': 'Von',
+        'bis': 'Bis',
+        'zimmer': 'Zimmer',
+        'ort': 'Ort',
+        'region': 'Region',
+        'hp': 'HP',
+        'sr': 'SR',
+        'maxpersonen': 'MaxPersonen',
+        'maxperson': 'MaxPersonen',
+        'maxpersons': 'MaxPersonen',
+
         # Core roomlist fields
         'roomtype': 'Room_type',
         'roomtypeezdz': 'Room_type',
@@ -108,6 +139,13 @@ def parse_boolean(value):
     return False
 
 
+def normalize_whitespace(value):
+    if value is None or pd.isna(value):
+        return ''
+    s = str(value).replace('\u00a0', ' ').strip()
+    return ' '.join(s.split())
+
+
 # -------------------------
 # Detection
 # -------------------------
@@ -117,6 +155,18 @@ def detect_file_type(df):
 
     if {'Competitorid/Staff ID', 'Accredid', 'Fiscode'}.intersection(columns):
         return 'athletes'
+
+    # Room types sheet: Zimmer + MaxPersonen (no ZimmerTypID needed)
+    if {'Zimmer', 'MaxPersonen'}.issubset(columns):
+        return 'room_types'
+
+    # Hotels master list (no inventories)
+    if {'Hotel', 'Ort'}.issubset(columns) and ('ZimmerTyp' not in columns):
+        return 'hotels_master'
+
+    # Hotel inventories / kontingente sheet
+    if {'Hotel', 'ZimmerTyp', 'Von', 'Bis', 'Zimmer'}.issubset(columns):
+        return 'hotel_inventories'
 
     if {'Room_type', 'Shared with Name', 'Single', 'Double_shared'}.intersection(columns):
         return 'roomlist'
@@ -392,30 +442,270 @@ def import_roomlist(df, app):
 
 
 # -------------------------
+# Room Types + Hotels (German Excel)
+# -------------------------
+
+def import_room_types_excel(df, app):
+    with app.app_context():
+        now = datetime.utcnow()
+        run = ImportRun(import_type='room_types', started_at=now)
+        db.session.add(run)
+        db.session.flush()
+
+        # Overwrite room types only. Hotel inventories are handled by the hotels importer.
+        RoomType.query.delete()
+        db.session.commit()
+
+        inserted = 0
+        skipped = 0
+        seen = set()
+
+        for index, row in df.iterrows():
+            try:
+                name = normalize_whitespace(row.get('Zimmer'))
+                max_persons = row.get('MaxPersonen')
+
+                if not name:
+                    skipped += 1
+                    continue
+
+                if name in seen:
+                    continue
+                seen.add(name)
+
+                if pd.isna(max_persons):
+                    skipped += 1
+                    continue
+
+                rt = RoomType(name=name, max_persons=int(max_persons))
+                db.session.add(rt)
+                inserted += 1
+
+            except Exception as e:
+                print(f"[RoomTypes ERROR] Row {index}: {e}")
+                skipped += 1
+
+        db.session.commit()
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+
+        return {
+            'inserted': inserted,
+            'skipped': skipped,
+            'run': run.to_dict(),
+        }
+
+
+def import_hotels_excel(df, app):
+    with app.app_context():
+        now = datetime.utcnow()
+        run = ImportRun(import_type='hotels', started_at=now)
+        db.session.add(run)
+        db.session.flush()
+
+        # Strict validation: all referenced ZimmerTyp must exist as RoomType.name
+        referenced_types = set()
+        for _, row in df.iterrows():
+            rt_name = normalize_whitespace(row.get('ZimmerTyp'))
+            if not rt_name:
+                continue
+            referenced_types.add(rt_name)
+
+        existing_types = {normalize_whitespace(rt.name) for rt in RoomType.query.all()}
+        missing_types = sorted([t for t in referenced_types if t not in existing_types])
+        if missing_types:
+            raise ValueError(f"Missing RoomTypes: {missing_types}")
+
+        # Overwrite hotels + inventories (keep room types as imported from its sheet)
+        HotelRoomInventory.query.delete()
+        Hotel.query.delete()
+        db.session.commit()
+
+        inserted_hotels = 0
+        inserted_inventories = 0
+        skipped = 0
+        missing_room_types = 0
+
+        hotel_cache = {}  # (name, location, region) -> Hotel
+        room_type_cache = {normalize_whitespace(rt.name): rt for rt in RoomType.query.all()}
+
+        for index, row in df.iterrows():
+            try:
+                hotel_name = normalize_whitespace(row.get('Hotel'))
+                room_type_name = normalize_whitespace(row.get('ZimmerTyp'))
+                available_from = parse_date(row.get('Von'))
+                available_until = parse_date(row.get('Bis'))
+                room_count = row.get('Zimmer')
+
+                location = row.get('Ort')
+                region = row.get('Region')
+                has_hp = parse_boolean(row.get('HP'))
+                has_sr = parse_boolean(row.get('SR'))
+
+                if not hotel_name or not room_type_name or pd.isna(room_count):
+                    skipped += 1
+                    continue
+
+                location = None if pd.isna(location) else normalize_whitespace(location)
+                region = None if pd.isna(region) else normalize_whitespace(region)
+
+                if not available_from or not available_until:
+                    skipped += 1
+                    continue
+
+                rt = room_type_cache.get(room_type_name)
+                if not rt:
+                    # Should not happen due to strict validation, but keep as a safeguard.
+                    missing_room_types += 1
+                    skipped += 1
+                    continue
+
+                hotel_key = (hotel_name, location or '', region or '')
+                hotel = hotel_cache.get(hotel_key)
+                if not hotel:
+                    hotel = Hotel(name=hotel_name, location=location, region=region)
+                    db.session.add(hotel)
+                    db.session.flush()
+                    hotel_cache[hotel_key] = hotel
+                    inserted_hotels += 1
+
+                inv = HotelRoomInventory(
+                    hotel_id=hotel.id,
+                    room_type_id=rt.id,
+                    available_from=available_from,
+                    available_until=available_until,
+                    room_count=int(room_count),
+                    has_half_board=has_hp,
+                    has_sr=has_sr,
+                )
+                db.session.add(inv)
+                inserted_inventories += 1
+
+            except Exception as e:
+                print(f"[Hotels ERROR] Row {index}: {e}")
+                skipped += 1
+
+        db.session.commit()
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+
+        return {
+            'hotelsInserted': inserted_hotels,
+            'inventoriesInserted': inserted_inventories,
+            'missingRoomTypes': missing_room_types,
+            'skipped': skipped,
+            'run': run.to_dict(),
+        }
+
+
+def import_hotels_master_excel(df, app):
+    with app.app_context():
+        now = datetime.utcnow()
+        run = ImportRun(import_type='hotels_master', started_at=now)
+        db.session.add(run)
+        db.session.flush()
+
+        # Overwrite just hotels (no inventories in this sheet type)
+        Hotel.query.delete()
+        db.session.commit()
+
+        inserted = 0
+        skipped = 0
+
+        for index, row in df.iterrows():
+            try:
+                name = normalize_whitespace(row.get('Hotel'))
+                if not name:
+                    skipped += 1
+                    continue
+
+                location = None if pd.isna(row.get('Ort')) else normalize_whitespace(row.get('Ort'))
+                region = None if pd.isna(row.get('Region')) else normalize_whitespace(row.get('Region'))
+
+                db.session.add(Hotel(name=name, location=location or None, region=region or None))
+                inserted += 1
+            except Exception as e:
+                print(f"[HotelsMaster ERROR] Row {index}: {e}")
+                skipped += 1
+
+        db.session.commit()
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+
+        return {'inserted': inserted, 'skipped': skipped, 'run': run.to_dict()}
+
+
+# -------------------------
 # Main Import
 # -------------------------
 
 def import_excel_file(file_path, app):
     print("Starting Excel import...")
 
-    df = pd.read_excel(file_path)
-    df = normalize_columns(df)
+    sheets = pd.read_excel(file_path, sheet_name=None)
+    if not isinstance(sheets, dict):
+        sheets = {'Sheet1': sheets}
 
-    print(f"Columns: {list(df.columns)}")
+    # Pass 1: classify sheets
+    classified = []
+    for sheet_name, df in sheets.items():
+        if df is None or getattr(df, 'empty', True):
+            continue
+        df = normalize_columns(df)
+        file_type = detect_file_type(df)
+        classified.append((sheet_name, file_type, df))
+        print(f"[{sheet_name}] Columns: {list(df.columns)}")
+        print(f"[{sheet_name}] Detected: {file_type}")
 
-    file_type = detect_file_type(df)
-    print(f"Detected: {file_type}")
+    if not classified:
+        raise ValueError("Unknown or empty Excel format")
 
-    if file_type == 'athletes':
-        result = import_athletes_upsert(df, app)
-        return {'type': 'athletes', 'result': result}
+    # Pass 2: import in dependency order
+    results = {}
+    summary = {
+        'imported': {
+            'room_types': 0,
+            'hotels_master': 0,
+            'hotel_inventories': 0,
+            'athletes': 0,
+            'roomlist': 0
+        },
+        'skippedSheets': 0,
+    }
 
-    elif file_type == 'roomlist':
-        result = import_roomlist(df, app)
-        return {'type': 'roomlist', 'result': result}
+    ordered_types = ['room_types', 'hotels_master', 'hotel_inventories', 'athletes', 'roomlist']
+    for wanted in ordered_types:
+        for sheet_name, file_type, df in classified:
+            if file_type != wanted:
+                continue
 
-    else:
-        raise ValueError("Unknown Excel format")
+            if wanted == 'athletes':
+                results[sheet_name] = {'type': 'athletes', 'result': import_athletes_upsert(df, app)}
+                summary['imported']['athletes'] += 1
+            elif wanted == 'roomlist':
+                results[sheet_name] = {'type': 'roomlist', 'result': import_roomlist(df, app)}
+                summary['imported']['roomlist'] += 1
+            elif wanted == 'room_types':
+                results[sheet_name] = {'type': 'room_types', 'result': import_room_types_excel(df, app)}
+                summary['imported']['room_types'] += 1
+            elif wanted == 'hotels_master':
+                results[sheet_name] = {'type': 'hotels_master', 'result': import_hotels_master_excel(df, app)}
+                summary['imported']['hotels_master'] += 1
+            elif wanted == 'hotel_inventories':
+                results[sheet_name] = {'type': 'hotel_inventories', 'result': import_hotels_excel(df, app)}
+                summary['imported']['hotel_inventories'] += 1
+
+    # Record unknown sheets (we keep them in results so the user can see what was ignored)
+    for sheet_name, file_type, df in classified:
+        if sheet_name in results:
+            continue
+        results[sheet_name] = {'type': 'unknown', 'result': {'skipped': True, 'columns': list(df.columns)}}
+        summary['skippedSheets'] += 1
+
+    if not results:
+        raise ValueError("Unknown or empty Excel format")
+
+    return {'summary': summary, 'sheets': results}
 
 
 # -------------------------

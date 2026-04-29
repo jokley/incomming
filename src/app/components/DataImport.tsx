@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export function DataImport() {
   const [file, setFile] = useState<File | null>(null);
@@ -40,8 +40,18 @@ export function DataImport() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
+        const raw = await response.text();
+        let message = `Upload failed (${response.status} ${response.statusText})`;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed?.error) message = parsed.error;
+            else if (parsed?.message) message = parsed.message;
+          } catch {
+            message = raw;
+          }
+        }
+        throw new Error(message);
       }
 
       setSuccess(true);

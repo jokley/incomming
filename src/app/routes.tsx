@@ -8,11 +8,13 @@ import { RoomAnalytics } from "./components/RoomAnalytics";
 import { RoomTypesManagement } from "./components/RoomTypesManagement";
 import { HotelsManagement } from "./components/HotelsManagement";
 import { EventsManagement } from "./components/EventsManagement";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     Component: Layout,
+    ErrorBoundary: RouteErrorBoundary,
     children: [
       { index: true, Component: Dashboard },
       { path: "athletes", Component: Athletes },
