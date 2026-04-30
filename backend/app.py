@@ -897,12 +897,57 @@ def create_room_assignment():
                 'athlete2': {'id': str(a2.id), 'gender': g2},
             })
 
+    hotel_id = int(data['hotelId'])
+    room_type_id = int(data['roomTypeId'])
+    check_in_date = datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None
+    check_out_date = datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+
+    if not check_in_date or not check_out_date:
+        return _booking_error('MISSING_DATES', 'Booking requires check-in and check-out dates')
+    if check_in_date > check_out_date:
+        return _booking_error('INVALID_DATES', 'Check-in must be before or equal to check-out')
+
+    # Validate kontingent coverage and capacity for the requested date range
+    inv_rooms = db.session.query(func.coalesce(func.sum(HotelRoomInventory.room_count), 0)).filter(
+        HotelRoomInventory.hotel_id == hotel_id,
+        HotelRoomInventory.room_type_id == room_type_id,
+        HotelRoomInventory.available_from <= check_in_date,
+        HotelRoomInventory.available_until >= check_out_date,
+    ).scalar()
+
+    if not inv_rooms or inv_rooms <= 0:
+        return _booking_error('NO_KONTINGENT', 'No kontingent available for this hotel/room type in the given date range', {
+            'hotelId': str(hotel_id),
+            'roomTypeId': str(room_type_id),
+            'checkInDate': check_in_date.isoformat(),
+            'checkOutDate': check_out_date.isoformat(),
+        })
+
+    used_rooms = RoomBooking.query.filter(
+        RoomBooking.hotel_id == hotel_id,
+        RoomBooking.room_type_id == room_type_id,
+        RoomBooking.check_in_date.isnot(None),
+        RoomBooking.check_out_date.isnot(None),
+        RoomBooking.check_in_date <= check_out_date,
+        RoomBooking.check_out_date >= check_in_date,
+    ).count()
+
+    if used_rooms >= inv_rooms:
+        return _booking_error('KONTINGENT_EXCEEDED', 'No remaining kontingent for this hotel/room type in the given date range', {
+            'hotelId': str(hotel_id),
+            'roomTypeId': str(room_type_id),
+            'checkInDate': check_in_date.isoformat(),
+            'checkOutDate': check_out_date.isoformat(),
+            'inventoryRooms': int(inv_rooms),
+            'usedRooms': int(used_rooms),
+        })
+
     booking = RoomBooking(
-        hotel_id=int(data['hotelId']),
-        room_type_id=int(data['roomTypeId']),
+        hotel_id=hotel_id,
+        room_type_id=room_type_id,
         room_number=data.get('roomNumber'),
-        check_in_date=datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None,
-        check_out_date=datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+        check_in_date=check_in_date,
+        check_out_date=check_out_date
     )
     db.session.add(booking)
     db.session.flush()
@@ -932,11 +977,56 @@ def update_room_assignment(assignment_id):
     if len(athlete_ids) > room_type.max_persons:
         return jsonify({'error': f'Room type max occupancy is {room_type.max_persons}'}), 400
 
-    booking.hotel_id = int(data['hotelId'])
-    booking.room_type_id = int(data['roomTypeId'])
+    hotel_id = int(data['hotelId'])
+    room_type_id = int(data['roomTypeId'])
+    check_in_date = datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None
+    check_out_date = datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+
+    if not check_in_date or not check_out_date:
+        return _booking_error('MISSING_DATES', 'Booking requires check-in and check-out dates')
+    if check_in_date > check_out_date:
+        return _booking_error('INVALID_DATES', 'Check-in must be before or equal to check-out')
+
+    inv_rooms = db.session.query(func.coalesce(func.sum(HotelRoomInventory.room_count), 0)).filter(
+        HotelRoomInventory.hotel_id == hotel_id,
+        HotelRoomInventory.room_type_id == room_type_id,
+        HotelRoomInventory.available_from <= check_in_date,
+        HotelRoomInventory.available_until >= check_out_date,
+    ).scalar()
+
+    if not inv_rooms or inv_rooms <= 0:
+        return _booking_error('NO_KONTINGENT', 'No kontingent available for this hotel/room type in the given date range', {
+            'hotelId': str(hotel_id),
+            'roomTypeId': str(room_type_id),
+            'checkInDate': check_in_date.isoformat(),
+            'checkOutDate': check_out_date.isoformat(),
+        })
+
+    used_rooms = RoomBooking.query.filter(
+        RoomBooking.hotel_id == hotel_id,
+        RoomBooking.room_type_id == room_type_id,
+        RoomBooking.id != booking.id,
+        RoomBooking.check_in_date.isnot(None),
+        RoomBooking.check_out_date.isnot(None),
+        RoomBooking.check_in_date <= check_out_date,
+        RoomBooking.check_out_date >= check_in_date,
+    ).count()
+
+    if used_rooms >= inv_rooms:
+        return _booking_error('KONTINGENT_EXCEEDED', 'No remaining kontingent for this hotel/room type in the given date range', {
+            'hotelId': str(hotel_id),
+            'roomTypeId': str(room_type_id),
+            'checkInDate': check_in_date.isoformat(),
+            'checkOutDate': check_out_date.isoformat(),
+            'inventoryRooms': int(inv_rooms),
+            'usedRooms': int(used_rooms),
+        })
+
+    booking.hotel_id = hotel_id
+    booking.room_type_id = room_type_id
     booking.room_number = data.get('roomNumber')
-    booking.check_in_date = datetime.fromisoformat(data['checkInDate']).date() if data.get('checkInDate') else None
-    booking.check_out_date = datetime.fromisoformat(data['checkOutDate']).date() if data.get('checkOutDate') else None
+    booking.check_in_date = check_in_date
+    booking.check_out_date = check_out_date
 
     RoomBookingOccupant.query.filter_by(room_booking_id=booking.id).delete()
     unique_athlete_ids = []
@@ -1013,19 +1103,21 @@ def get_hotels_capacity_overview():
             HotelRoomInventory.available_until >= start_date
         )
 
-    assignment_query = RoomAssignment.query.join(Athlete).join(RoomType)
+    booking_query = RoomBookingOccupant.query.join(RoomBooking).join(Athlete).join(RoomType, RoomBooking.room_type_id == RoomType.id)
     if hotel_id:
-        assignment_query = assignment_query.filter(RoomAssignment.hotel_id == hotel_id)
+        booking_query = booking_query.filter(RoomBooking.hotel_id == hotel_id)
     if room_type_id:
-        assignment_query = assignment_query.filter(RoomAssignment.room_type_id == room_type_id)
+        booking_query = booking_query.filter(RoomBooking.room_type_id == room_type_id)
     if nation:
-        assignment_query = assignment_query.filter(Athlete.nation_code == nation)
+        booking_query = booking_query.filter(Athlete.nation_code == nation)
     if discipline:
-        assignment_query = assignment_query.filter(Athlete.discipline == discipline)
+        booking_query = booking_query.filter(Athlete.discipline == discipline)
     if start_date and end_date:
-        assignment_query = assignment_query.filter(
-            RoomAssignment.check_in_date <= end_date,
-            RoomAssignment.check_out_date >= start_date
+        booking_query = booking_query.filter(
+            RoomBooking.check_in_date.isnot(None),
+            RoomBooking.check_out_date.isnot(None),
+            RoomBooking.check_in_date <= end_date,
+            RoomBooking.check_out_date >= start_date
         )
 
     hotel_map = {}
@@ -1049,18 +1141,21 @@ def get_hotels_capacity_overview():
         rt_entry['inventoryRooms'] += inv.room_count
         rt_entry['inventoryBeds'] += inv.room_count * inv.room_type.max_persons
 
-    for a in assignment_query.all():
-        hid = a.hotel_id
+    for occ in booking_query.all():
+        booking = occ.room_booking
+        if not booking:
+            continue
+        hid = booking.hotel_id
         if hid not in hotel_map:
             hotel_map[hid] = {
-                'hotel': {'id': str(a.hotel.id), 'name': a.hotel.name, 'location': a.hotel.location, 'region': a.hotel.region},
+                'hotel': {'id': str(booking.hotel.id), 'name': booking.hotel.name, 'location': booking.hotel.location, 'region': booking.hotel.region},
                 'roomTypes': {},
                 'totals': {'inventoryRooms': 0, 'inventoryBeds': 0, 'occupiedRooms': 0, 'occupiedBeds': 0}
             }
 
-        rt_id = str(a.room_type.id)
+        rt_id = str(booking.room_type.id)
         rt_entry = hotel_map[hid]['roomTypes'].setdefault(rt_id, {
-            'roomType': a.room_type.to_dict(),
+            'roomType': booking.room_type.to_dict(),
             'inventoryRooms': 0,
             'inventoryBeds': 0,
             'occupiedBeds': 0

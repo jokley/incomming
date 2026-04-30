@@ -131,6 +131,21 @@ function normalizeGender(a: Athlete): "M" | "F" | null {
   return null;
 }
 
+function parseIsoDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toIsoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function datesOverlap(startA: string | null | undefined, endA: string | null | undefined, startB: string | null | undefined, endB: string | null | undefined) {
+  if (!startA || !endA || !startB || !endB) return false;
+  return startA <= endB && startB <= endA;
+}
+
 function ComboBox({
   label,
   placeholder,
@@ -317,6 +332,29 @@ export function Assignments() {
   const selectedHotelData = hotels.find(h => h.id === selectedHotel);
   const selectedRoomTypeData = roomTypes.find(rt => rt.id === selectedRoomType);
 
+  const bookingRange = useMemo(() => {
+    const a1Start = parseIsoDate(occupant1?.arrivalDate || null);
+    const a1End = parseIsoDate(occupant1?.departureDate || null);
+    const a2Start = parseIsoDate(occupant2?.arrivalDate || null);
+    const a2End = parseIsoDate(occupant2?.departureDate || null);
+
+    if (!a1Start || !a1End) {
+      return { start: null as string | null, end: null as string | null };
+    }
+
+    if (bookingType !== "double") {
+      return { start: toIsoDate(a1Start), end: toIsoDate(a1End) };
+    }
+
+    if (!a2Start || !a2End) {
+      return { start: null as string | null, end: null as string | null };
+    }
+
+    const start = a1Start < a2Start ? a1Start : a2Start;
+    const end = a1End > a2End ? a1End : a2End;
+    return { start: toIsoDate(start), end: toIsoDate(end) };
+  }, [bookingType, occupant1?.arrivalDate, occupant1?.departureDate, occupant2?.arrivalDate, occupant2?.departureDate]);
+
   const setupMissing = {
     athletes: athletes.length === 0,
     hotels: hotels.length === 0,
@@ -346,6 +384,7 @@ export function Assignments() {
     if (bookingType === "double" && !occupant2) return false;
     if (occupant1Id && occupant1Id === occupant2Id) return false;
     if (bookingType === "double" && !compatibility.ok) return false;
+    if (!bookingRange.start || !bookingRange.end) return false;
 
     const participantIds = [occupant1.id, ...(bookingType === "double" && occupant2 ? [occupant2.id] : [])];
     if (participantIds.some(id => assignedAthleteIds.has(id))) return false;
@@ -354,6 +393,8 @@ export function Assignments() {
   }, [
     assignedAthleteIds,
     bookingType,
+    bookingRange.end,
+    bookingRange.start,
     compatibility.ok,
     occupant1,
     occupant1Id,
@@ -384,8 +425,8 @@ export function Assignments() {
         hotelId: selectedHotel,
         roomTypeId: selectedRoomType,
         roomNumber: roomNumber.trim() ? roomNumber.trim() : undefined,
-        checkInDate: occupant1.arrivalDate || undefined,
-        checkOutDate: occupant1.departureDate || undefined,
+        checkInDate: bookingRange.start || undefined,
+        checkOutDate: bookingRange.end || undefined,
       });
 
       const freshBookings = await api.getRoomAssignments();
@@ -542,6 +583,75 @@ export function Assignments() {
     [roomTypes],
   );
 
+  const eligibleInventoryByRoomType = useMemo(() => {
+    if (!selectedHotelData || !bookingRange.start || !bookingRange.end) return new Map<string, number>();
+    const inventories = selectedHotelData.roomInventories || [];
+    const map = new Map<string, number>();
+    for (const inv of inventories) {
+      if (!inv?.roomType?.id) continue;
+      if (inv.availableFrom <= bookingRange.start && inv.availableUntil >= bookingRange.end) {
+        map.set(inv.roomType.id, (map.get(inv.roomType.id) || 0) + (inv.roomCount || 0));
+      }
+    }
+    return map;
+  }, [bookingRange.end, bookingRange.start, selectedHotelData]);
+
+  const roomTypeOptionsForHotel = useMemo(() => {
+    if (!selectedHotelData) return roomTypeOptions;
+    if (!bookingRange.start || !bookingRange.end) return [];
+    return roomTypeOptions.filter(rt => eligibleInventoryByRoomType.has(rt.value));
+  }, [bookingRange.end, bookingRange.start, eligibleInventoryByRoomType, roomTypeOptions, selectedHotelData]);
+
+  useEffect(() => {
+    if (!selectedHotelData) return;
+    if (!bookingRange.start || !bookingRange.end) return;
+    if (!selectedRoomType) return;
+    if (!eligibleInventoryByRoomType.has(selectedRoomType)) {
+      setSelectedRoomType("");
+    }
+  }, [bookingRange.end, bookingRange.start, eligibleInventoryByRoomType, selectedHotelData, selectedRoomType]);
+
+  const usedRoomsByRoomType = useMemo(() => {
+    if (!selectedHotelData || !bookingRange.start || !bookingRange.end) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const b of bookings) {
+      if (b.hotel?.id !== selectedHotelData.id) continue;
+      const rtId = b.roomType?.id;
+      if (!rtId) continue;
+
+      const overlaps = b.checkInDate && b.checkOutDate
+        ? datesOverlap(b.checkInDate, b.checkOutDate, bookingRange.start, bookingRange.end)
+        : true; // unknown dates -> count as used (safe)
+
+      if (!overlaps) continue;
+      map.set(rtId, (map.get(rtId) || 0) + 1);
+    }
+    return map;
+  }, [bookingRange.end, bookingRange.start, bookings, selectedHotelData]);
+
+  const kontingentRows = useMemo(() => {
+    if (!selectedHotelData || !bookingRange.start || !bookingRange.end) return [];
+    const rows = [];
+    for (const [roomTypeId, inventoryRooms] of eligibleInventoryByRoomType.entries()) {
+      const rt = roomTypes.find(r => r.id === roomTypeId);
+      const used = usedRoomsByRoomType.get(roomTypeId) || 0;
+      rows.push({
+        roomTypeId,
+        roomTypeName: rt?.name || roomTypeId,
+        inventoryRooms,
+        usedRooms: used,
+        remainingRooms: Math.max(0, inventoryRooms - used),
+      });
+    }
+    rows.sort((a, b) => a.roomTypeName.localeCompare(b.roomTypeName));
+    return rows;
+  }, [bookingRange.end, bookingRange.start, eligibleInventoryByRoomType, roomTypes, selectedHotelData, usedRoomsByRoomType]);
+
+  const remainingForSelectedRoomType = useMemo(() => {
+    const row = kontingentRows.find(r => r.roomTypeId === selectedRoomType);
+    return row ? row.remainingRooms : null;
+  }, [kontingentRows, selectedRoomType]);
+
   const nationOptions = useMemo(() => {
     const set = new Set<string>();
     athletes.forEach(a => a.nationCode && set.add(a.nationCode));
@@ -596,6 +706,13 @@ export function Assignments() {
         const g2 = matched ? normalizeGender(matched) : null;
         const genderOk = matched ? (!!g1 && !!g2 && g1 === g2) : true;
 
+        const start1 = a.arrivalDate || null;
+        const end1 = a.departureDate || null;
+        const start2 = matched?.arrivalDate || null;
+        const end2 = matched?.departureDate || null;
+        const datesKnown = !!start1 && !!end1 && !!start2 && !!end2;
+        const datesOverlapOk = datesKnown ? datesOverlap(start1, end1, start2, end2) : false;
+
         return {
           athlete: a,
           requestedRaw,
@@ -605,6 +722,8 @@ export function Assignments() {
           matchedUnassigned,
           nationOk,
           genderOk,
+          datesKnown,
+          datesOverlapOk,
         };
       });
 
@@ -728,7 +847,9 @@ export function Assignments() {
                     r.unassigned &&
                     r.matchedUnassigned &&
                     r.nationOk &&
-                    r.genderOk;
+                    r.genderOk &&
+                    r.datesKnown &&
+                    r.datesOverlapOk;
 
                   return (
                     <tr key={r.athlete.id}>
@@ -751,6 +872,11 @@ export function Assignments() {
                         {r.status === "matched" && (!r.nationOk || !r.genderOk) && (
                           <span className="ml-2 inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-800">
                             rule mismatch
+                          </span>
+                        )}
+                        {r.status === "matched" && (!r.datesKnown || !r.datesOverlapOk) && (
+                          <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                            date mismatch
                           </span>
                         )}
                       </td>
@@ -1016,7 +1142,10 @@ export function Assignments() {
                 label="Hotel *"
                 placeholder="-- Hotel wählen --"
                 value={selectedHotel}
-                onChange={setSelectedHotel}
+                onChange={(v) => {
+                  setSelectedHotel(v);
+                  setSelectedRoomType("");
+                }}
                 options={hotelOptions}
               />
             </div>
@@ -1027,8 +1156,14 @@ export function Assignments() {
                 placeholder="-- Typ wählen --"
                 value={selectedRoomType}
                 onChange={setSelectedRoomType}
-                options={roomTypeOptions}
+                options={roomTypeOptionsForHotel}
+                disabled={!selectedHotel || !bookingRange.start || !bookingRange.end}
               />
+              {selectedHotel && bookingRange.start && bookingRange.end && roomTypeOptionsForHotel.length === 0 && (
+                <p className="mt-1 text-xs text-red-700">
+                  No kontingent for this hotel in this date range.
+                </p>
+              )}
             </div>
 
             <div className="lg:col-span-4">
@@ -1050,14 +1185,7 @@ export function Assignments() {
                     <span className="font-medium">Room type:</span> {selectedRoomTypeData?.name ?? "-"}
                   </div>
                   <div>
-                    <span className="font-medium">Dates:</span>{" "}
-                    {occupant1?.arrivalDate
-                      ? new Date(occupant1.arrivalDate).toLocaleDateString("de-DE")
-                      : "-"}{" "}
-                    →{" "}
-                    {occupant1?.departureDate
-                      ? new Date(occupant1.departureDate).toLocaleDateString("de-DE")
-                      : "-"}
+                    <span className="font-medium">Dates:</span> {bookingRange.start || "-"} → {bookingRange.end || "-"}
                   </div>
                   <div>
                     <span className="font-medium">Occupants:</span>{" "}
@@ -1082,14 +1210,66 @@ export function Assignments() {
                     <span className="font-medium">Blocked (rule):</span> {compatibility.issues.join(", ")}
                   </div>
                 )}
+                {remainingForSelectedRoomType !== null && (
+                  <div className={cn("mt-2", remainingForSelectedRoomType <= 0 ? "text-red-700" : "text-blue-900")}>
+                    <span className="font-medium">Kontingent remaining:</span>{" "}
+                    {remainingForSelectedRoomType}
+                  </div>
+                )}
               </div>
+            </div>
+
+            <div className="lg:col-span-12">
+              {selectedHotelData && bookingRange.start && bookingRange.end && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-gray-900">
+                      Kontingent: {selectedHotelData.name} ({bookingRange.start} → {bookingRange.end})
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Inventory rows covering this date range • Used counts overlapping bookings
+                    </div>
+                  </div>
+                  <div className="mt-3 overflow-hidden rounded-md border bg-white">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                        <tr>
+                          <th className="px-3 py-2">Room type</th>
+                          <th className="px-3 py-2 text-right">Inventory</th>
+                          <th className="px-3 py-2 text-right">Used</th>
+                          <th className="px-3 py-2 text-right">Remaining</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {kontingentRows.map(r => (
+                          <tr key={r.roomTypeId}>
+                            <td className="px-3 py-2">{r.roomTypeName}</td>
+                            <td className="px-3 py-2 text-right">{r.inventoryRooms}</td>
+                            <td className="px-3 py-2 text-right">{r.usedRooms}</td>
+                            <td className={cn("px-3 py-2 text-right font-medium", r.remainingRooms <= 0 ? "text-red-700" : "text-gray-900")}>
+                              {r.remainingRooms}
+                            </td>
+                          </tr>
+                        ))}
+                        {kontingentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-6 text-center text-sm text-gray-500">
+                              No kontingent rows cover this date range.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-12">
               <Button
                 type="button"
                 onClick={handleBookingSubmit}
-                disabled={!canSubmit || submitting}
+                disabled={!canSubmit || submitting || (remainingForSelectedRoomType !== null && remainingForSelectedRoomType <= 0)}
                 className="w-full md:w-auto"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1198,6 +1378,8 @@ export function Assignments() {
                       <th className="px-3 py-2">Room</th>
                       <th className="px-3 py-2">Type</th>
                       <th className="px-3 py-2">Occupants</th>
+                      <th className="px-3 py-2">Check-in</th>
+                      <th className="px-3 py-2">Check-out</th>
                       <th className="px-3 py-2">Nation</th>
                       <th className="px-3 py-2">Gender</th>
                       <th className="px-3 py-2">Function</th>
@@ -1220,6 +1402,8 @@ export function Assignments() {
                             ))}
                           </div>
                         </td>
+                        <td className="px-3 py-2 text-gray-700">{r.booking.checkInDate || "—"}</td>
+                        <td className="px-3 py-2 text-gray-700">{r.booking.checkOutDate || "—"}</td>
                         <td className="px-3 py-2 text-gray-700">{r.nations.join(", ") || "—"}</td>
                         <td className="px-3 py-2 text-gray-700">{r.genders.join(", ") || "—"}</td>
                         <td className="px-3 py-2 text-gray-700">{r.functions.join(", ") || "—"}</td>
@@ -1248,7 +1432,7 @@ export function Assignments() {
                     ))}
                     {pagedBookingRows.slice.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-sm text-gray-500">
+                        <td colSpan={11} className="px-3 py-8 text-center text-sm text-gray-500">
                           No bookings found.
                         </td>
                       </tr>
@@ -1334,6 +1518,8 @@ export function Assignments() {
                     <th className="px-4 py-2">Nation</th>
                     <th className="px-4 py-2">Gender</th>
                     <th className="px-4 py-2">Function</th>
+                    <th className="px-4 py-2">Arr</th>
+                    <th className="px-4 py-2">Dep</th>
                     <th className="px-4 py-2">Status</th>
                     <th className="px-4 py-2">Booking</th>
                     <th className="px-4 py-2"></th>
@@ -1349,6 +1535,8 @@ export function Assignments() {
                         <td className="px-4 py-2 text-gray-700">{a.nationCode}</td>
                         <td className="px-4 py-2 text-gray-700">{g}</td>
                         <td className="px-4 py-2 text-gray-700">{a.function || "—"}</td>
+                        <td className="px-4 py-2 text-gray-700">{a.arrivalDate || "—"}</td>
+                        <td className="px-4 py-2 text-gray-700">{a.departureDate || "—"}</td>
                         <td className="px-4 py-2">
                           {booking ? (
                             <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-800">
@@ -1359,17 +1547,18 @@ export function Assignments() {
                               Unassigned
                             </span>
                           )}
-                        </td>
-                        <td className="px-4 py-2 text-gray-700">
-                          {booking ? (
-                            <span className="text-xs">
+                      </td>
+                      <td className="px-4 py-2 text-gray-700">
+                        {booking ? (
+                          <span className="text-xs">
                               {booking.hotel?.name} • {booking.roomType?.name}{" "}
                               {booking.roomNumber ? `• Room ${booking.roomNumber}` : ""}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
+                              {booking.checkInDate && booking.checkOutDate ? ` • ${booking.checkInDate}→${booking.checkOutDate}` : ""}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
                         <td className="px-4 py-2 text-right">
                           {!booking ? (
                             <Button
@@ -1408,7 +1597,7 @@ export function Assignments() {
                   })}
                   {filteredAthletes.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                      <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                         No athletes found.
                       </td>
                     </tr>
